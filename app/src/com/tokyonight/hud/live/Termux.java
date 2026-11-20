@@ -37,7 +37,9 @@ final class Termux {
         i.putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home");
         i.putExtra("com.termux.RUN_COMMAND_BACKGROUND", true);
         i.putExtra("com.termux.RUN_COMMAND_PENDING_INTENT", pi);
-        if (android.os.Build.VERSION.SDK_INT >= 26) c.startForegroundService(i); else c.startService(i);
+        try { Context.class.getMethod("startForegroundService", Intent.class).invoke(c, i); }   // API 26+, absent from the API 23 jar
+        catch (java.lang.reflect.InvocationTargetException e) { throw new RuntimeException(e.getCause()); }
+        catch (ReflectiveOperationException e) { c.startService(i); }
     }
 
     /** called by TermuxRx */

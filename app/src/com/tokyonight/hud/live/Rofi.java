@@ -57,10 +57,10 @@ final class Rofi {
             {"Accessibility", android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS}, {"Date & time", android.provider.Settings.ACTION_DATE_SETTINGS},
             {"Language & keyboard", android.provider.Settings.ACTION_LOCALE_SETTINGS}, {"Developer options", android.provider.Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS},
             {"About phone", android.provider.Settings.ACTION_DEVICE_INFO_SETTINGS}, {"NFC", android.provider.Settings.ACTION_NFC_SETTINGS},
-            {"Hotspot & tethering", "android.settings.TETHER_SETTINGS"}, {"VPN", android.provider.Settings.ACTION_VPN_SETTINGS},
-            {"Default apps", android.provider.Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS}, {"Do not disturb", "android.settings.ZEN_MODE_SETTINGS"},
+            {"Hotspot & tethering", "android.settings.TETHER_SETTINGS"}, {"VPN", "android.settings.VPN_SETTINGS"},
+            {"Default apps", "android.settings.MANAGE_DEFAULT_APPS_SETTINGS"}, {"Do not disturb", "android.settings.ZEN_MODE_SETTINGS"},
             {"Wallpaper", Intent.ACTION_SET_WALLPAPER}, {"Accounts", android.provider.Settings.ACTION_SYNC_SETTINGS},
-            {"Data usage", android.provider.Settings.ACTION_DATA_USAGE_SETTINGS}, {"Night light", "android.settings.NIGHT_DISPLAY_SETTINGS"},
+            {"Data usage", "android.settings.DATA_USAGE_SETTINGS"}, {"Night light", "android.settings.NIGHT_DISPLAY_SETTINGS"},
     };
 
     java.util.List<Object[]> shortcuts;                            // loaded on the first plain-text query
