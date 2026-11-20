@@ -3,6 +3,8 @@ name: Build APKs
 # Every push / PR: run the checks and build all three APKs (wallpaper app, icon pack, notification link),
 # each uploaded as its own workflow artifact.
 # A tag like v32 also publishes a GitHub release with the APKs attached (Obtainium can follow it).
+# `git push origin main --tags` fires two push events for the same commit (branch + tag); the gate job
+# skips the branch build when that commit already carries a v* tag, so only the tag run builds.
 #
 # Signing: add repository secrets
 #   KEYSTORE_BASE64  base64 of keystore/tn-hud.jks   (macOS: base64 -i keystore/tn-hud.jks | pbcopy)
@@ -22,7 +24,31 @@ permissions:
   contents: write
 
 jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.g.outputs.build }}
+    steps:
+      - uses: actions/checkout@v4
+        if: github.event_name == 'push' && github.ref_type == 'branch'
+        with:
+          sparse-checkout: .github
+      - id: g
+        run: |
+          build=true
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF_TYPE" = branch ]; then
+            # lightweight tags list the commit; annotated ones list it on their peeled ^{} line
+            tags=$(git ls-remote --tags origin 'refs/tags/v*' | awk -v s="$GITHUB_SHA" '$1 == s {print $2}' | sed 's|refs/tags/||; s|\^{}||' | sort -u)
+            if [ -n "$tags" ]; then
+              build=false
+              echo "::notice::$GITHUB_SHA is tagged ($(echo $tags)); the tag run builds it"
+            fi
+          fi
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: gate
+    if: needs.gate.outputs.build == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
