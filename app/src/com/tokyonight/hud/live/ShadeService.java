@@ -16,9 +16,10 @@ import android.widget.FrameLayout;
 
 /**
  * Optional pull-down over any app. An accessibility service is the one kind of ordinary app allowed to draw over
- * the status bar (TYPE_ACCESSIBILITY_OVERLAY); it puts a thin, invisible strip along part of the top edge and,
- * on a downward drag from it, shows the HUD panel (Shade) as a full-screen overlay. The rest of the top edge still
- * opens Android's own shade. The service reads no screen content and reacts to no accessibility events.
+ * the status bar (TYPE_ACCESSIBILITY_OVERLAY); it puts a thin, invisible strip over part of the status bar and,
+ * on a tap there, shows the HUD panel (Shade) as a full-screen overlay. A swipe down still opens Android's own
+ * shade: One UI's status bar watches that gesture itself and takes it over (the strip only sees a cancel), so the
+ * tap is the trigger; a downward drag counts too where the system leaves it alone (e.g. with its shade open). The service reads no screen content and reacts to no accessibility events.
  *
  * Prefs: shOn (strip on), shEdge (0 left half, 1 full width, 2 right half), shShow (tint the strip to see where it is).
  *
@@ -81,10 +82,20 @@ public class ShadeService extends AccessibilityService {
         strip = new View(this);
         if (sp.getBoolean("shShow", false)) strip.setBackgroundColor(0x667DCFFF);
         strip.setOnTouchListener(new View.OnTouchListener() {
-            float y0; boolean fired;
+            float x0, y0; long t0; boolean fired;
             public boolean onTouch(View v, MotionEvent e) {
-                if (e.getActionMasked() == MotionEvent.ACTION_DOWN) { y0 = e.getRawY(); fired = false; }
-                else if (e.getActionMasked() == MotionEvent.ACTION_MOVE && !fired && e.getRawY() - y0 > 28 * dp) { fired = true; open(); }
+                switch (e.getActionMasked()) {
+                    case MotionEvent.ACTION_DOWN: x0 = e.getRawX(); y0 = e.getRawY(); t0 = e.getEventTime(); fired = false; break;
+                    case MotionEvent.ACTION_MOVE:
+                        if (!fired && e.getRawY() - y0 > 28 * dp) { fired = true; open(); }
+                        break;
+                    case MotionEvent.ACTION_UP:                       // a tap (the system never cancelled it)
+                        if (!fired && Math.hypot(e.getRawX() - x0, e.getRawY() - y0) < 24 * dp && e.getEventTime() - t0 < 500) {
+                            fired = true; v.performHapticFeedback(1); open();
+                        }
+                        break;
+                    default: break;                                   // ACTION_CANCEL: Android's shade took the swipe
+                }
                 return true;
             }
         });
