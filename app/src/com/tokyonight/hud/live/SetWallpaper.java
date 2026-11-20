@@ -294,8 +294,9 @@ public class SetWallpaper extends Activity {
         LinearLayout cdr = card("App drawer", "Swipe up (by default). The search field is focused with the keyboard up; Enter opens the top match.");
         cdr.addView(chipItem("Style", null, "lnStyle", 0, new int[]{0, 1, 2, 3}, new String[]{"Text", "Icon + text", "Grid", "Icons only"}));
         cdr.addView(chipItem("Grid columns", "Grid and Icons only.", "lnCols", 4, new int[]{4, 5, 6}, new String[]{"4", "5", "6"}));
-        cdr.addView(switchItem("TN-HUD icon frames", "The icon pack's octagon frame, applied here, so TN-HUD-Icons isn't needed for the drawer.", "lnIconFrame", true, null));
-        cdr.addView(chipItem("Icon colour", "Neon redraws each icon as glowing tubes in its own colours; the frame keeps its colour.", "lnIconTint", 0, new int[]{0, 1, 2}, new String[]{"Original", "Mono", "Neon"}));
+        cdr.addView(switchItem("Element icons", "Periodic-table tiles instead of app artwork: a two-letter symbol, coloured by app category. Per app, \"keep the original icon\" still wins.", "lnIconElement", false, null));
+        cdr.addView(switchItem("TN-HUD icon frames", "The icon pack's chamfered tile frame, applied here, so TN-HUD-Icons isn't needed for the drawer. Artwork icons only.", "lnIconFrame", true, null));
+        cdr.addView(chipItem("Icon colour", "Neon redraws each icon as glowing tubes in its own colours; the frame keeps its colour. Artwork icons only.", "lnIconTint", 0, new int[]{0, 1, 2}, new String[]{"Original", "Mono", "Neon"}));
         divider(cdr);
         cdr.addView(switchItem("Frequent apps", "Top 5 at the start of the drawer, counted on this phone.", "lnFrequent", true, null));
         cdr.addView(switchItem("Search finds hidden apps", null, "lnSearchHidden", true, null));

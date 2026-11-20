@@ -31,12 +31,12 @@ Built for a Galaxy S24 Ultra (1440×3120) but resolution independent. Android 8.
 - The HUD becomes the home screen and owns the touches: no icons over it, no misfires from the app drawer
 - Swipe left / right changes tabs, long-press for the menu
 - Remappable gestures: swipe up, swipe down (left / right side), two-finger swipe down, double tap, home button while home → app drawer, notifications, quick settings, torch, camera, next tab, HUD settings or any app
-- Swipe up: app drawer as a text list, icon + text list, or icon grid with or without labels (4–6 columns, original / mono / neon icons), search field focused and the keyboard up; Enter opens the top match (or searches the web), A–Z rail, frequent apps (launches decayed over ~2 weeks), rename / hide / app info / uninstall, hidden apps behind a "show hidden" row, work-profile apps tagged
+- Swipe up: app drawer as an fzf-style table (flags, launches, age, name with matched letters underlined, shortcuts of the top match), icon + text list, or icon grid with or without labels (4–6 columns, original / mono / neon icons, or periodic-table "element" tiles as a separate switch), search field focused and the keyboard up; Enter opens the top match (or searches the web), A–Z rail, frequent apps (launches decayed over ~2 weeks), rename / hide / app info / uninstall, hidden apps behind a "show hidden" row, work-profile apps tagged
 - Command line in the drawer search: start with `>` for T-UI style commands (`> torch`, `> wifi`, `> timer 5`, `> alarm 7:30`, `> call <name|number>`, `> wa <name>`, `> tg <name>`, `> web <query>`, `> maps <place>`, `> hide <app>`, `> info <app>`, `> help` for the full list); names match by prefix, Enter runs the top match
 - App shortcuts (new chat, compose, …) at the top of an app's long-press menu
 - Its own *Launcher* tab in the settings app: home app, drawer style, gestures and glyphs
 - Glyphs: draw a letter on the home screen (W, M, V, N, Z, L, C, O, S, G, P, ✓, Λ, >) to open an app or run any gesture action; built-in shapes plus your own taught samples, neon trail with the recognised glyph
-- Rofi-style pop-up: `>` glyph opens a frosted-glass prompt with live results (most-used apps, apps by name, `>` commands); the C glyph opens it as `> call` with contact suggestions. `> wa`, `> wav` and `> tg` start WhatsApp voice / video and Telegram calls through the call entries those apps add to the system contacts (needs their contact sync; unofficial, may change)
+- Rofi-style pop-up: `>` glyph opens a terminal-style `cmd://palette` prompt with live results (most-used apps, apps by name, `>` commands); the C glyph opens it as `> call` with contact suggestions. `> wa`, `> wav` and `> tg` start WhatsApp voice / video and Telegram calls through the call entries those apps add to the system contacts (needs their contact sync; unofficial, may change)
 - Pop-up extras: `= 2*pi*4` (or any arithmetic) calculates and copies the result; `$ command` runs in Termux and shows the output (Termux needs `allow-external-apps = true`); plain text also finds app shortcuts and Android settings pages; search tolerates initials ("gm") and one typo
 - HUD panel: grouped notifications (tap a group to expand), swipe sideways to dismiss, inline reply for messaging apps (TN-HUD Link v2), media card with transport controls, quick toggles that really switch (auto-rotate, adaptive brightness and a brightness slider with "Modify system settings"; battery saver and location after a one-time `adb shell pm grant com.tokyonight.hud.live android.permission.WRITE_SECURE_SETTINGS`)
 - Panel everywhere: optional accessibility service ("TN-HUD pull-down") puts an invisible strip over part of the status bar; tapping it opens the HUD panel over any app (swipe down stays One UI's shade, which takes that gesture itself). Reads no screen content
@@ -147,7 +147,7 @@ app/
     Calc.java            pop-up calculator
     Termux.java          "$ command" through Termux RUN_COMMAND (TermuxRx gets the result)
     IconPacks.java       ADW / Nova icon pack loader
-    Glass.java           frosted-glass Tokyo Night dialogs
+    Glass.java           terminal-style Tokyo Night dialogs (accent header strip, square buttons)
     SetWallpaper.java    Material 3 settings app
     Astro.java           Sun / Moon / planets, twilight, lunar events, meteors, Voyager model
     Sgp4.java, Sat.java  SGP4 propagator, look angles, visible-pass and Starlink-train detection
@@ -162,7 +162,7 @@ app/
   shim/                  AWT shim + preview mains
   test/                  pure-Java checks
 link/                    TN-HUD Link: notification-listener companion (badges, media, notification panel)
-icons/                   icon pack (code-free APK: frame back / mask / upon at scale 0.92)
+icons/                   icon pack (code-free APK: chamfered tile frame back / mask / upon at scale 0.92; gen-frames.py redraws them)
 docs/screenshots/
 third_party/             licenses of bundled third-party material
 ```

@@ -40,7 +40,9 @@ final class Shade {
         void closeShade();
     }
 
-    static final int FG = HudLauncher.FG, COMMENT = HudLauncher.COMMENT, BLUE = HudLauncher.BLUE, CYAN = HudLauncher.CYAN, TEXT2 = 0xFFA9B1D6;
+    static final int FG = HudLauncher.FG, COMMENT = HudLauncher.COMMENT, BLUE = HudLauncher.BLUE, CYAN = HudLauncher.CYAN, TEXT2 = HudLauncher.TEXT2,
+            ACCENT = HudLauncher.ACCENT, GREEN = HudLauncher.GREEN, YELLOW = HudLauncher.YELLOW, RED = HudLauncher.RED, LINE = HudLauncher.LINE,
+            INK = HudLauncher.INK;
 
     final Context c;
     final Host host;
@@ -49,7 +51,7 @@ final class Shade {
     final float dp;
     final boolean blur;
     final LinearLayout view, rowA, rowB, bright, notes;
-    final TextView count;
+    final TextView count, sysInfo, batInfo;
     final HashSet<String> expanded = new HashSet<String>();
     String replyKey;                                            // notification whose reply box is open
     String replyDraft = "";                                      // survives the rebuild on every Link update
@@ -62,34 +64,51 @@ final class Shade {
 
         view = new LinearLayout(c);
         view.setOrientation(LinearLayout.VERTICAL);
-        view.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, blur
-                ? new int[]{0xB81A1B26, 0x9E1A1B26, 0xC416161E}          // translucent: the blurred screen shows through
-                : new int[]{0xF21A1B26, 0xEB1A1B26, 0xF516161E}));
+        view.setBackgroundColor(blur ? 0xD9000000 : 0xF7000000);   // AMOLED black; translucent when the screen behind is blurred
         int top = px(12);
         if (overlay) top += statusBarHeight(); else view.setFitsSystemWindows(true);
         view.setPadding(px(20), top, px(20), 0);
         view.setClickable(true);                                   // swallow taps on empty space
 
+        // ---- expanded status header: big clock, date / uptime (left), battery (right)
         LinearLayout head = new LinearLayout(c);
-        head.setGravity(Gravity.CENTER_VERTICAL);
-        head.addView(tv("// NOTIFICATIONS", 14, BLUE));
-        count = tv("", 14, COMMENT);
-        head.addView(count, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView clear = tv("CLEAR ALL", 14, BLUE); clear.setPadding(px(10), px(10), px(10), px(10));
-        clear.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { Link.send(c, "clear", null, 0); } });
-        head.addView(clear);
-        TextView sys = tv("SYSTEM ▾", 14, COMMENT); sys.setPadding(px(10), px(10), 0, px(10));
-        sys.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { host.closeShade(); statusBar(c, false); } });
-        head.addView(sys);
+        head.setGravity(Gravity.TOP);
+        LinearLayout left = new LinearLayout(c);
+        left.setOrientation(LinearLayout.VERTICAL);
+        android.widget.TextClock clock = new android.widget.TextClock(c);
+        clock.setFormat24Hour("HH:mm"); clock.setFormat12Hour("h:mm");
+        clock.setTypeface(mono); clock.setTextColor(FG);
+        clock.setTextSize(TypedValue.COMPLEX_UNIT_SP, 44);
+        clock.setIncludeFontPadding(false);
+        left.addView(clock);
+        sysInfo = tv("", 11, COMMENT);
+        sysInfo.setPadding(0, px(4), 0, 0);
+        left.addView(sysInfo);
+        head.addView(left, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        batInfo = tv("", 11, FG);
+        batInfo.setGravity(Gravity.END);
+        batInfo.setLineSpacing(px(2), 1f);
+        head.addView(batInfo);
         view.addView(head);
 
         rowA = toggleRow(); rowB = toggleRow();
-        view.addView(rowA, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(46)));
-        view.addView(rowB, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(46)));
+        LinearLayout.LayoutParams ra = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(52));
+        ra.topMargin = px(10);
+        view.addView(rowA, ra);
+        view.addView(rowB, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(52)));
         bright = new LinearLayout(c);
         bright.setGravity(Gravity.CENTER_VERTICAL);
         bright.setPadding(0, px(6), 0, px(2));
         view.addView(bright);
+
+        // ---- "$ tail -f /var/log/notif" ............ N entries
+        LinearLayout logHead = new LinearLayout(c);
+        logHead.setGravity(Gravity.CENTER_VERTICAL);
+        logHead.setPadding(0, px(8), 0, px(4));
+        logHead.addView(tv("$ tail -f /var/log/notif", 11, COMMENT), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        count = tv("", 11, COMMENT);
+        logHead.addView(count);
+        view.addView(logHead);
 
         ScrollView sv = new ScrollView(c);
         sv.setVerticalScrollBarEnabled(false);
@@ -107,6 +126,67 @@ final class Shade {
             }
         });
         view.addView(sv, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        // ---- bottom bar: CLEAR ALL / SYSTEM / settings
+        LinearLayout bar = new LinearLayout(c);
+        bar.setPadding(0, px(8), 0, px(16));
+        TextView clear = button("CLEAR ALL \u232B", RED, RED);
+        clear.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { Link.send(c, "clear", null, 0); } });
+        TextView sys = button("SYSTEM \u25BE", TEXT2, LINE);
+        sys.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { host.closeShade(); statusBar(c, false); } });
+        TextView gear = button("\u2699", TEXT2, LINE);
+        gear.setContentDescription("HUD settings");
+        gear.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
+            host.closeShade();
+            try { c.startActivity(new Intent(c, SetWallpaper.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); } catch (Exception ignored) { }
+        } });
+        LinearLayout.LayoutParams b1 = new LinearLayout.LayoutParams(0, px(44), 1f); b1.rightMargin = px(8);
+        LinearLayout.LayoutParams b2 = new LinearLayout.LayoutParams(0, px(44), 1f); b2.rightMargin = px(8);
+        bar.addView(clear, b1); bar.addView(sys, b2); bar.addView(gear, new LinearLayout.LayoutParams(px(44), px(44)));
+        view.addView(bar);
+    }
+
+    /** concept's square button: 1 dp border, text centred, accent tint while pressed */
+    TextView button(String label, int col, int border) {
+        TextView t = tv(label, 12, col);
+        t.setGravity(Gravity.CENTER);
+        t.setSingleLine(true);
+        t.setBackground(box(border, 0));
+        return t;
+    }
+
+    Drawable box(int border, int fill) {
+        GradientDrawable n = new GradientDrawable(); n.setColor(fill); n.setStroke(px(1), border);
+        GradientDrawable p = new GradientDrawable(); p.setColor(0x33BB9AF7); p.setStroke(px(1), ACCENT);
+        StateListDrawable sl = new StateListDrawable();
+        sl.addState(new int[]{android.R.attr.state_pressed}, p);
+        sl.addState(new int[0], n);
+        return sl;
+    }
+
+    /** "FRI 20 NOV · up 3d 04:11" and the battery block */
+    void status() {
+        long up = android.os.SystemClock.elapsedRealtime() / 60000;
+        sysInfo.setText(String.format(Locale.US, "%ta %<td %<tb", System.currentTimeMillis()).toUpperCase(Locale.US)
+                + String.format(Locale.US, " \u00B7 up %dd %02d:%02d", up / 1440, (up / 60) % 24, up % 60));
+        Intent b = c.registerReceiver(null, new android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+        if (b == null) { batInfo.setText(""); return; }
+        int lvl = b.getIntExtra("level", -1), sc = b.getIntExtra("scale", 100), plug = b.getIntExtra("plugged", 0);
+        int pct = lvl < 0 ? -1 : Math.round(lvl * 100f / Math.max(1, sc));
+        float t = b.getIntExtra("temperature", Integer.MIN_VALUE) / 10f;
+        android.text.SpannableStringBuilder sb = new android.text.SpannableStringBuilder();
+        HudLauncher.span(sb, "BAT ", COMMENT); HudLauncher.span(sb, pct < 0 ? "--" : pct + "%", FG);
+        HudLauncher.span(sb, plug != 0 ? " CHG" : "", plug != 0 ? GREEN : FG);
+        if (t > -100) { HudLauncher.span(sb, "\nT ", COMMENT); HudLauncher.span(sb, String.format(Locale.US, "%.1f\u00B0C", t), t >= 40 ? RED : FG); }
+        try {
+            android.os.BatteryManager bm = (android.os.BatteryManager) c.getSystemService(Context.BATTERY_SERVICE);
+            int ua = bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CURRENT_NOW);
+            if (ua != Integer.MIN_VALUE && ua != 0) {
+                int ma = Math.abs(ua) > 20000 ? ua / 1000 : ua;   // some devices report mA, most µA
+                HudLauncher.span(sb, "\nI ", COMMENT); HudLauncher.span(sb, String.format(Locale.US, "%+dmA", ma), ma > 0 ? GREEN : YELLOW);
+            }
+        } catch (Throwable ignored) { }
+        batInfo.setText(sb);
     }
 
     int px(float v) { return Math.round(v * dp); }
@@ -127,30 +207,44 @@ final class Shade {
 
     void toast(String s) { android.widget.Toast.makeText(c, s, android.widget.Toast.LENGTH_SHORT).show(); }
 
-    /** glass card: translucent storm fill, faint light rim, brighter while pressed */
-    Drawable glassCard(float radius) {
-        GradientDrawable n = new GradientDrawable(); n.setColor(0x6624283B); n.setCornerRadius(radius); n.setStroke(px(1), 0x29C0CAF5);
-        GradientDrawable p = new GradientDrawable(); p.setColor(0x4D7AA2F7); p.setCornerRadius(radius); p.setStroke(px(1), 0x667AA2F7);
+    /** log entry: dashed rule along the bottom, accent tint while pressed */
+    Drawable logLine() {
+        GradientDrawable d = new GradientDrawable(); d.setColor(0); d.setStroke(px(1), LINE, px(4), px(3));
+        android.graphics.drawable.InsetDrawable bottom = new android.graphics.drawable.InsetDrawable(d, -px(2), -px(2), -px(2), 0);
         StateListDrawable sl = new StateListDrawable();
-        sl.addState(new int[]{android.R.attr.state_pressed}, p);
-        sl.addState(new int[0], n);
+        sl.addState(new int[]{android.R.attr.state_pressed}, new android.graphics.drawable.LayerDrawable(new Drawable[]{
+                new android.graphics.drawable.ColorDrawable(0x22BB9AF7), bottom}));
+        sl.addState(new int[0], bottom);
         return sl;
     }
 
     static final int OFF = 0, ON = 1, LOCKED = 2;
 
+    /** toggle tile: "[■]" + label in the accent while on, "[ ]" muted while off, "[+]" when a grant is missing */
     TextView chip(String label, int state, View.OnClickListener l) {
-        TextView t = tv(state == LOCKED ? label + "·+" : label, 12, state == ON ? 0xFF1A1B26 : state == LOCKED ? COMMENT : FG);
+        String mark = state == ON ? "[\u25A0]" : state == LOCKED ? "[+]" : "[ ]";
+        TextView t = tv(mark + "\n" + label, 11, state == ON ? ACCENT : state == LOCKED ? COMMENT : TEXT2);
         t.setGravity(Gravity.CENTER);
-        t.setSingleLine(true);
-        if (state == ON) { GradientDrawable g = new GradientDrawable(); g.setColor(0xE67DCFFF); g.setCornerRadius(px(10)); t.setBackground(g); }
-        else t.setBackground(glassCard(px(10)));
+        t.setMaxLines(2);
+        if (state == ON) t.setTypeface(mono, Typeface.BOLD);
+        t.setBackground(box(state == ON ? ACCENT : LINE, state == ON ? 0x1ABB9AF7 : 0));
+        t.setContentDescription(label + (state == ON ? " on" : state == LOCKED ? " needs permission" : " off"));
+        t.setOnClickListener(l);
+        return t;
+    }
+
+    /** settings panel launcher (not a toggle): "›" + label */
+    TextView panelChip(String label, View.OnClickListener l) {
+        TextView t = tv("\u203A\n" + label, 11, TEXT2);
+        t.setGravity(Gravity.CENTER);
+        t.setMaxLines(2);
+        t.setBackground(box(LINE, 0));
         t.setOnClickListener(l);
         return t;
     }
 
     void add(LinearLayout row, TextView t) {
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, px(38), 1f);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, px(46), 1f);
         lp.rightMargin = px(6); lp.topMargin = px(6);
         row.addView(t, lp);
     }
@@ -179,6 +273,7 @@ final class Shade {
     }
 
     void fill() {
+        status();
         // ---- toggles
         rowA.removeAllViews(); rowB.removeAllViews();
         final boolean w = Toggles.canWrite(c), s = Toggles.canSecure(c);
@@ -205,30 +300,35 @@ final class Shade {
             if (!w) { explainLocked(false); return; }
             Toggles.setAutoRotate(c, !rot); refillSoon();
         } }));
-        add(rowB, chip("WI-FI", OFF, panelIntent("android.settings.panel.action.WIFI")));
-        add(rowB, chip("NET", OFF, panelIntent("android.settings.panel.action.INTERNET_CONNECTIVITY")));
-        add(rowB, chip("BT", OFF, panelIntent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS)));
-        add(rowB, chip("VOL", OFF, panelIntent("android.settings.panel.action.VOLUME")));
+        add(rowB, panelChip("WI-FI", panelIntent("android.settings.panel.action.WIFI")));
+        add(rowB, panelChip("NET", panelIntent("android.settings.panel.action.INTERNET_CONNECTIVITY")));
+        add(rowB, panelChip("BT", panelIntent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS)));
+        add(rowB, panelChip("VOL", panelIntent("android.settings.panel.action.VOLUME")));
         final boolean ab = Toggles.autoBright(c);
-        add(rowB, chip("AUTO☀", !w ? LOCKED : ab ? ON : OFF, new View.OnClickListener() { public void onClick(View v) {
+        add(rowB, chip("AUTO BRT", !w ? LOCKED : ab ? ON : OFF, new View.OnClickListener() { public void onClick(View v) {
             if (!w) { explainLocked(false); return; }
             Toggles.setAutoBright(c, !ab); refillSoon();
         } }));
         bright.removeAllViews();
         if (w) {
-            bright.addView(tv("☀", 14, COMMENT));
+            TextView bl = tv("BRT", 12, COMMENT);
+            bright.addView(bl, new LinearLayout.LayoutParams(px(36), ViewGroup.LayoutParams.WRAP_CONTENT));
+            final TextView pct = tv("", 12, FG);
+            pct.setGravity(Gravity.END);
             SeekBar sb = new SeekBar(c);
             sb.setMax(255);
             sb.setProgress(Toggles.brightness(c));
-            sb.setProgressTintList(android.content.res.ColorStateList.valueOf(CYAN));
-            sb.setThumbTintList(android.content.res.ColorStateList.valueOf(CYAN));
-            sb.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(0x663B4261));
+            pct.setText(Math.round(sb.getProgress() * 100f / 255) + "%");
+            sb.setProgressTintList(android.content.res.ColorStateList.valueOf(ACCENT));
+            sb.setThumbTintList(android.content.res.ColorStateList.valueOf(ACCENT));
+            sb.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF3B4261));
             sb.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-                public void onProgressChanged(SeekBar b, int v, boolean user) { if (user) Toggles.setBrightness(c, v); }
+                public void onProgressChanged(SeekBar b, int v, boolean user) { pct.setText(Math.round(v * 100f / 255) + "%"); if (user) Toggles.setBrightness(c, v); }
                 public void onStartTrackingTouch(SeekBar b) { }
                 public void onStopTrackingTouch(SeekBar b) { refillSoon(); }
             });
-            bright.addView(sb, new LinearLayout.LayoutParams(0, px(36), 1f));
+            bright.addView(sb, new LinearLayout.LayoutParams(0, px(40), 1f));
+            bright.addView(pct, new LinearLayout.LayoutParams(px(44), ViewGroup.LayoutParams.WRAP_CONTENT));
         }
 
         // ---- notifications
@@ -239,7 +339,7 @@ final class Shade {
                     : "TN-HUD LINK IS INSTALLED BUT HAS NO NOTIFICATION ACCESS (OR HASN'T REPORTED YET).", 15, COMMENT);
             m.setPadding(px(4), px(24), px(4), px(12));
             notes.addView(m);
-            TextView open = tv("› OPEN HUD SETTINGS", 15, BLUE);
+            TextView open = tv("› OPEN HUD SETTINGS", 15, ACCENT);
             open.setPadding(px(4), px(8), px(4), px(8));
             open.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
                 host.closeShade();
@@ -250,8 +350,8 @@ final class Shade {
         }
         if (Link.mediaActive()) notes.addView(mediaCard(), lp(8));
         int n = Link.nKey.length;
-        count.setText("  · " + n);
-        if (n == 0) { TextView m = tv("ALL CLEAR", 16, COMMENT); m.setPadding(px(4), px(24), 0, 0); notes.addView(m); }
+        count.setText(n + (n == 1 ? " entry" : " entries"));
+        if (n == 0) { TextView m = tv("-- no entries --", 13, COMMENT); m.setPadding(px(4), px(16), 0, 0); notes.addView(m); }
 
         LinkedHashMap<String, ArrayList<Integer>> groups = new LinkedHashMap<String, ArrayList<Integer>>();   // newest app first
         for (int i = 0; i < n; i++) {
@@ -265,9 +365,9 @@ final class Shade {
             ArrayList<Integer> idx = g.getValue();
             if (idx.size() > 1) notes.addView(groupHead(g.getKey(), idx), lp(12));
             boolean open = idx.size() == 1 || expanded.contains(g.getKey());
-            for (int k = 0; k < (open ? idx.size() : 1); k++) notes.addView(noteRow(idx.get(k), now), lp(idx.size() > 1 ? 4 : 8));
+            for (int k = 0; k < (open ? idx.size() : 1); k++) notes.addView(noteRow(idx.get(k), now), lp(0));
         }
-        TextView hint = tv("TAP OPENS · SWIPE SIDEWAYS DISMISSES · SWIPE UP AT THE END CLOSES", 11, COMMENT);
+        TextView hint = tv("tap opens \u00B7 swipe sideways dismisses \u00B7 swipe up at the end closes", 10, COMMENT);
         hint.setPadding(px(4), px(14), 0, px(24));
         notes.addView(hint);
     }
@@ -281,24 +381,30 @@ final class Shade {
     View mediaCard() {
         LinearLayout card = new LinearLayout(c);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(px(14), px(12), px(14), px(8));
-        card.setBackground(glassCard(px(14)));
-        card.addView(tv(((Link.mApp == null ? "MEDIA" : Link.mApp) + (Link.mState == 3 ? "  ·  PLAYING" : "  ·  PAUSED")).toUpperCase(Locale.ROOT), 12, COMMENT));
-        TextView t = tv(Link.mTitle == null ? "" : Link.mTitle, 16, FG);
+        card.setPadding(px(12), px(10), px(12), px(10));
+        card.setBackground(box(LINE, 0));
+        card.addView(tv("/dev/audio \u00B7 " + (Link.mApp == null ? "media" : Link.mApp) + (Link.mState == 3 ? "" : " \u00B7 paused"), 10, ACCENT));
+        TextView t = tv(Link.mTitle == null ? "" : Link.mTitle, 15, FG);
+        t.setTypeface(mono, Typeface.BOLD);
         t.setSingleLine(true); t.setEllipsize(TextUtils.TruncateAt.END);
         card.addView(t);
-        if (Link.mArtist != null) { TextView a = tv(Link.mArtist, 14, TEXT2); a.setSingleLine(true); a.setEllipsize(TextUtils.TruncateAt.END); card.addView(a); }
+        if (Link.mArtist != null) { TextView a = tv(Link.mArtist, 12, COMMENT); a.setSingleLine(true); a.setEllipsize(TextUtils.TruncateAt.END); card.addView(a); }
         LinearLayout ctl = new LinearLayout(c);
-        ctl.setGravity(Gravity.CENTER);
+        ctl.setGravity(Gravity.END);
+        ctl.setPadding(0, px(8), 0, 0);
         String[] k = {"prev", "toggle", "next"};
-        String[] g = {"⏮", Link.mState == 3 ? "⏸" : "▶", "⏭"};
+        String[] g = {"|\u25C0", Link.mState == 3 ? "\u275A\u275A" : "\u25B6", "\u25B6|"};
+        String[] cd = {"Previous", Link.mState == 3 ? "Pause" : "Play", "Next"};
         for (int i = 0; i < 3; i++) {
             final String cmd = k[i];
-            TextView b = tv(g[i], 22, i == 1 ? CYAN : FG);
+            TextView b = tv(g[i], 14, i == 1 ? 0xFF000000 : FG);
             b.setGravity(Gravity.CENTER);
-            b.setPadding(px(18), px(6), px(18), px(6));
+            b.setContentDescription(cd[i]);
+            if (i == 1) { GradientDrawable f = new GradientDrawable(); f.setColor(ACCENT); b.setBackground(f); }
+            else b.setBackground(box(LINE, 0));
             b.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { Link.send(c, "media", cmd, 0); refillSoon(); } });
-            ctl.addView(b);
+            LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(px(44), px(44)); bl.leftMargin = px(4);
+            ctl.addView(b, bl);
         }
         card.addView(ctl);
         if (Link.mPkg != null) card.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
@@ -315,7 +421,7 @@ final class Shade {
         final boolean open = expanded.contains(pkg);
         int i0 = idx.get(0);
         String app = i0 < Link.nApp.length ? Link.nApp[i0] : pkg;
-        TextView t = tv((open ? "▾ " : "▸ ") + app.toUpperCase(Locale.ROOT) + "  · " + idx.size(), 12, BLUE);
+        TextView t = tv((open ? "▾ " : "▸ ") + app.toLowerCase(Locale.ROOT) + "  · " + idx.size(), 12, ACCENT);
         r.addView(t, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         TextView x = tv("CLEAR", 12, COMMENT); x.setPadding(px(10), px(6), px(4), px(6));
         x.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
@@ -332,16 +438,25 @@ final class Shade {
     View noteRow(final int i, long now) {
         final LinearLayout row = new LinearLayout(c);
         row.setOrientation(LinearLayout.VERTICAL);
-        row.setPadding(px(14), px(12), px(14), px(12));
-        row.setBackground(glassCard(px(14)));
-        long ago = Math.max(0, now - (i < Link.nWhen.length ? Link.nWhen[i] : now)) / 60000;
-        String when = ago < 1 ? "NOW" : ago < 60 ? ago + "M" : ago < 1440 ? (ago / 60) + "H" : (ago / 1440) + "D";
+        row.setPadding(px(4), px(10), px(4), px(10));
+        row.setBackground(logLine());
+        long at = i < Link.nWhen.length ? Link.nWhen[i] : now;
+        String when = now - at > 86400000L ? String.format(Locale.US, "%td%<tb", at).toUpperCase(Locale.US) : String.format(Locale.US, "%tH:%<tM", at);
+        final boolean canReply = i < Link.nReply.length && Link.nReply[i];
+        String pkg = i < Link.nPkg.length ? Link.nPkg[i] : "";
+        String lvl = pkg.startsWith("com.tokyonight") ? "SKY" : canReply ? "MSG" : "INFO";
+        int lc = lvl.equals("SKY") ? GREEN : lvl.equals("MSG") ? CYAN : BLUE;
         LinearLayout meta = new LinearLayout(c);
         meta.setGravity(Gravity.CENTER_VERTICAL);
-        meta.addView(tv(Link.nApp[i].toUpperCase(Locale.ROOT) + "  ·  " + when, 12, COMMENT), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        final boolean canReply = i < Link.nReply.length && Link.nReply[i];
+        android.text.SpannableStringBuilder mb = new android.text.SpannableStringBuilder();
+        HudLauncher.span(mb, when + "  ", COMMENT);
+        int l0 = mb.length(); HudLauncher.span(mb, String.format(Locale.US, "%-4s", lvl), lc);
+        mb.setSpan(new android.text.style.StyleSpan(Typeface.BOLD), l0, mb.length(), 0);
+        HudLauncher.span(mb, "  " + Link.nApp[i].toLowerCase(Locale.ROOT), TEXT2);
+        TextView mt = tv("", 11, COMMENT); mt.setText(mb);
+        meta.addView(mt, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         if (canReply) {
-            TextView rp = tv("REPLY", 12, BLUE);
+            TextView rp = tv("REPLY", 11, ACCENT);
             rp.setPadding(px(10), px(2), 0, px(2));
             rp.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
                 replyKey = Link.nKey[i].equals(replyKey) ? null : Link.nKey[i];
@@ -351,8 +466,8 @@ final class Shade {
             meta.addView(rp);
         }
         row.addView(meta);
-        if (Link.nTitle[i].length() > 0) row.addView(tv(Link.nTitle[i], 16, FG));
-        if (Link.nText[i].length() > 0) { TextView tx = tv(Link.nText[i], 14, TEXT2); tx.setMaxLines(3); tx.setEllipsize(TextUtils.TruncateAt.END); row.addView(tx); }
+        if (Link.nTitle[i].length() > 0) { TextView tt = tv(Link.nTitle[i], 14, FG); tt.setPadding(0, px(4), 0, 0); row.addView(tt); }
+        if (Link.nText[i].length() > 0) { TextView tx = tv(Link.nText[i], 13, TEXT2); tx.setMaxLines(3); tx.setEllipsize(TextUtils.TruncateAt.END); row.addView(tx); }
         if (canReply && Link.nKey[i].equals(replyKey)) row.addView(replyBox(Link.nKey[i]));
         row.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
             PendingIntent pi = i < Link.nIntent.length ? Link.nIntent[i] : null;
@@ -413,11 +528,11 @@ final class Shade {
         e.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
         e.setMaxLines(4);
         e.setImeOptions(EditorInfo.IME_ACTION_SEND);
-        GradientDrawable g = new GradientDrawable(); g.setColor(0x33000000); g.setCornerRadius(px(10)); g.setStroke(px(1), 0x807AA2F7);
+        GradientDrawable g = new GradientDrawable(); g.setColor(INK); g.setStroke(px(1), ACCENT);
         e.setBackground(g);
         e.setPadding(px(12), px(8), px(12), px(8));
         r.addView(e, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView send = tv("SEND", 13, CYAN);
+        TextView send = tv("SEND", 13, ACCENT);
         send.setPadding(px(14), px(10), px(4), px(10));
         final Runnable go = new Runnable() { public void run() {
             String t = e.getText().toString().trim();

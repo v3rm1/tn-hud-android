@@ -25,7 +25,7 @@ public final class HudRenderer {
 
     static final int BLACK = 0xFF000000, BLUE = 0xFF7AA2F7, CYAN = 0xFF7DCFFF, MAGENTA = 0xFFBB9AF7,
             RED = 0xFFF7768E, YELLOW = 0xFFE0AF68, GREEN = 0xFF9ECE6A, FG = 0xFFC0CAF5,
-            COMMENT = 0xFF565F89, LINE = 0xFF292E42, DARK = 0xFF24283B, ORANGE = 0xFFFF9E64, NAUT = 0xFF3D59A1;
+            COMMENT = 0xFF737AA2, LINE = 0xFF292E42, BORDER = 0xFF3B4261, PANEL = 0xFF0B0E17, ACCENT = MAGENTA, DARK = 0xFF24283B, ORANGE = 0xFFFF9E64, NAUT = 0xFF3D59A1;
     static final float W = 1440f, M = 64f;
     static final String[] HEX = {"7A", "A2", "F7", "BB", "9A", "7D", "C0", "CA", "F5", "E0", "AF", "68"};
     static final int[][] PATH = {{0, 2}, {3, 2}, {3, 0}, {1, 0}, {1, 4}};
@@ -290,11 +290,11 @@ public final class HudRenderer {
         return HIT_NONE;
     }
 
-    /** small chamfered chip; returns its left edge (chips are laid out right to left) */
+    /** small square chip (concept tab style); returns its left edge (chips are laid out right to left) */
     private float chipR(Canvas c, String label, float rx, float base, boolean on, int act, long arg) {
         float w = tw(label, 20) + 28, x0 = rx - w, y0 = base - 26, y1 = base + 10;
-        if (on) fill(BLUE); else stroke(LINE, 2);
-        poly(c, true, x0 + 8, y0, rx, y0, rx, y1 - 8, rx - 8, y1, x0, y1, x0, y0 + 8);
+        fill(on ? ACCENT : BLACK); rect(c, x0, y0, rx, y1);
+        if (!on) { stroke(BORDER, 2); rect(c, x0, y0, rx, y1); }
         textC(c, label, x0 + w / 2, base, on ? BLACK : COMMENT, 20);
         tap(x0, y0, rx, y1, act, arg);
         return x0;
@@ -318,23 +318,18 @@ public final class HudRenderer {
         return x;
     }
 
-    /** cyan glow, pale-to-cyan vertical gradient, horizontal scanline cuts; returns right edge */
-    private float holo(Canvas c, String t, float x, float y, float size, int top, int bot, int glowCol) {
+    /** clock glyphs: flat colour over a soft glow (glowCol at 35 %); returns right edge */
+    private float holo(Canvas c, String t, float x, float y, float size, int col, int glowCol) {
         Typeface tf = clockTf != null ? clockTf : Typeface.MONOSPACE;
         p.setTypeface(tf); p.setTextSize(size * s);
-        float w = p.measureText(t) / s, y0 = y - size * 0.74f;
-        g.setStyle(Paint.Style.FILL); g.setTypeface(tf); g.setTextSize(size * s); g.setColor(alpha(glowCol, 0.55f));
-        c.drawText(t, x * s, y * s, g);
-        g.setStyle(Paint.Style.STROKE);
-        p.setStyle(Paint.Style.FILL); p.setPathEffect(null); p.setColor(0xFFFFFFFF);
-        p.setShader(new LinearGradient(0, y0 * s, 0, y * s, top, bot, Shader.TileMode.CLAMP));
-        c.drawText(t, x * s, y * s, p);
-        p.setShader(null);
-        float step = Math.max(4f, size / 24f);
-        for (float yy = y0 - 6; yy < y + 6; yy += step) {
-            fill(0xFF000000); rect(c, x - 6, yy, x + w + 6, yy + step * 0.22f);
-            fill(0x8C000000); rect(c, x - 6, yy + step * 0.22f, x + w + 6, yy + step * 0.42f);
+        float w = p.measureText(t) / s;
+        if (glowCol != 0) {
+            g.setStyle(Paint.Style.FILL); g.setTypeface(tf); g.setTextSize(size * s); g.setColor(alpha(glowCol, 0.35f));
+            c.drawText(t, x * s, y * s, g);
+            g.setStyle(Paint.Style.STROKE);
         }
+        p.setStyle(Paint.Style.FILL); p.setPathEffect(null); p.setColor(col);
+        c.drawText(t, x * s, y * s, p);
         p.setTypeface(Typeface.MONOSPACE);
         return x + w;
     }
@@ -407,7 +402,7 @@ public final class HudRenderer {
         float cx = 720, cy = LOCK_CY, R = LOCK_R;
         if (d.lkClock) {                                   // same header as the home screen (clock + weather)
             clockBlock(c, d, 1f, 0); weatherBlock(c, d, 1f, 0);
-            stroke(LINE, 2); ln(c, M + 40, 500, W - M - 40, 500);
+            rule(c, M + 40, W - M - 40, 500, frameCol);
         }
         ring(c, cx, cy, R, clock / 40f, 0x00000000, 1f);
         twilightRing(c, d, cx, cy, R - 40 + 16);
@@ -427,7 +422,10 @@ public final class HudRenderer {
         else if (d.aur == 2) { st = "// AURORA ALERT · LOOK NORTH"; sc = GREEN; }
         else if (live >= 0) { st = "// " + passName(d, live) + " OVERHEAD"; sc = CYAN; }
         else { st = "// ACCESS RESTRICTED"; sc = RED; }
-        textC(c, st, cx, cy + R + 118, sc, 34);
+        float sy0 = cy + R + 68, sy1 = sy0 + 58;                     // concept one-liner strip
+        fill(PANEL); rect(c, M + 40, sy0, W - M - 40, sy1);
+        fill(sc); rect(c, M + 40, sy0, M + 46, sy1);
+        textC(c, st.startsWith("// ") ? st.substring(3) : st, cx, sy1 - 20, sc, 32);
 
         String l2; int c2;
         if (d.alarmAt > d.wallMs) {
@@ -439,7 +437,7 @@ public final class HudRenderer {
         float ex = textC(c, l2, cx, cy + R + 166, c2, 26);
         if ((clock / 530) % 2 == 0) { fill(RED); rect(c, ex + 10, cy + R + 144, ex + 24, cy + R + 168); }
         float ty = cy + R + 236;
-        if (d.lkNight) { tonight(c, d, ty); ty += 194; }
+        if (d.lkNight) { tonight(c, d, ty + 10); ty += 240; }
 
         // tiles, flowed two per row
         lt.clear();
@@ -468,7 +466,7 @@ public final class HudRenderer {
                     addT("STEPS · UNLOCKS" + (d.lastUnlock > 0 ? " · LAST " + ago(d.wallMs - d.lastUnlock) : ""), stp + " · " + d.unlocks, d.steps >= 0 ? GREEN : COMMENT);
             }
         }
-        float xa = M + 80, xb = 780, y = ty + 10;
+        float xa = M + 80, xb = 780, y = ty + 30, gy0 = ty - 12;
         for (int i = 0; i < lt.size(); i++) {
             Object[] t = lt.get(i);
             tile2(c, (String) t[0], (String) t[1], (Integer) t[2], i % 2 == 0 ? xa : xb, y);
@@ -480,14 +478,10 @@ public final class HudRenderer {
                     + String.format(Locale.US, "%d%%", d.battery)
                     + (d.fullInMs > 0 ? String.format(Locale.US, " · FULL IN %d:%02d", d.fullInMs / 3600000, (d.fullInMs / 60000) % 60) : "");
             tile2(c, "CHARGING" + (d.plug != null ? " · " + d.plug : ""), chg, CYAN, xa, y);
-            int on = Math.round(d.battery / 5f);
-            for (int i = 0; i < 20; i++) {
-                float sx = xb + 40 + i * 24, sy = y + 14;
-                if (i < on) fill(CYAN); else stroke(LINE, 2);
-                poly(c, true, sx + 6, sy, sx + 22, sy, sx + 16, sy + 22, sx, sy + 22);
-            }
+            bar(c, xb, y + 14, d.battery / 100f, CYAN, 30);
             y += 104;
         }
+        if (y > ty + 30) fieldset(c, M + 40, gy0, W - M - 40, y - 34, "sky.log", null, ACCENT);
         if (d.lkTime) timeStrip(c, d, y + 30);
 
         sweep(c, clock);
@@ -500,9 +494,9 @@ public final class HudRenderer {
     private float tnIllum;
 
     private void tonight(Canvas c, Data d, float y) {
-        float lx = M + 40, x0 = M + 150, x1 = W - M - 40, w = x1 - x0;
+        float lx = M + 68, x0 = M + 178, x1 = W - M - 68, w = x1 - x0;
         long t0 = d.wallMs - d.wallMs % 600000L, span = 12 * 3600000L;
-        text(c, "TONIGHT · NEXT 12 H", lx, y, COMMENT, 22);
+        fieldset(c, M + 40, y - 18, W - M - 40, y + 176, "tonight", "next 12 h", ACCENT);
         if (Double.isNaN(d.obsLat)) { textR(c, "SET A LOCATION", x1, y, COMMENT, 22); return; }
         if (Math.abs(t0 - tnAt) >= 600000L || d.obsLat != tnLat) {
             tnAt = t0; tnLat = d.obsLat;
@@ -571,8 +565,8 @@ public final class HudRenderer {
     private void addT(String label, String value, int col) { lt.add(new Object[]{label, value, col}); }
 
     private void tile2(Canvas c, String label, String value, int col, float x, float y) {
-        text(c, fit(label, 22, 560), x, y, COMMENT, 22);
-        text(c, fit(value, 28, 560), x, y + 16 + 22 * Math.max(1f, ts), col, 28);
+        text(c, fit(label, 22, 520), x, y, COMMENT, 22);
+        text(c, fit(value, 28, 520), x, y + 16 + 22 * Math.max(1f, ts), col, 28);
     }
 
     private static String dhm(long ms) {
@@ -1041,7 +1035,7 @@ public final class HudRenderer {
 
     private void dashboard(Canvas c, Data d, float dec, long seed) {
         wgShown = false;
-        frame(c, BLUE);
+        frame(c, ACCENT);
         float x0 = M + 40, xr = W - M - 40;
         hSky = false; hDial = false; hMotion = false; hClock = false; hCal = false; tabN = 0; cdy = 0;
         taps.clear(); tapArgs.clear(); tdy = 0;
@@ -1057,23 +1051,26 @@ public final class HudRenderer {
         if (on[MOD_CLOCK] || on[MOD_WX]) {
             if (on[MOD_CLOCK]) { tap(x0, 110, 840, 470, A_CLOCKAPP, 0); clockBlock(c, d, dec, seed); hClock = true; }
             if (on[MOD_WX]) { tap(xr - 430, 140, xr, 460, A_WX, 0); weatherBlock(c, d, dec, seed); }
-            stroke(LINE, 2); ln(c, x0, 500, xr, 500);
+            rule(c, x0, xr, 500, frameCol);
             y = 500;
         }
         if (tabbed && nt >= 2) {                               // tab bar
-            float bw = 150, gap = 16, x1 = xr, t0 = y + 14, t1 = y + 64;
+            float gap = 14, x1 = xr, t0 = y + 14, t1 = y + 64;
             for (int i = nt - 1; i >= 0; i--) {
                 boolean act = i == pg;
-                float a0 = x1 - bw;
-                if (act) fill(BLUE); else stroke(LINE, 2);
-                poly(c, true, a0 + 12, t0, x1, t0, x1, t1 - 12, x1 - 12, t1, a0, t1, a0, t0 + 12);
-                textC(c, tabLabel(d, vt[i]), a0 + bw / 2, t1 - 16, act ? BLACK : COMMENT, 24);
+                String tl = String.format(Locale.US, "%02d %s", i + 1, tabLabel(d, vt[i]));
+                float bw = Math.max(150, tw(tl, 24) + 36), a0 = x1 - bw;
+                if (act) { fill(ACCENT); rect(c, a0, t0, x1, t1); } else { stroke(BORDER, 2); rect(c, a0, t0, x1, t1); }
+                textC(c, tl, a0 + bw / 2, t1 - 16, act ? BLACK : COMMENT, 24);
                 tabX0[i] = a0; tabX1[i] = x1;
                 tap(a0, t0, x1, t1, HIT_TAB0 + i, 0);
                 x1 = a0 - gap;
             }
             tabN = nt; tabY0 = t0; tabY1 = t1;
-            if (d.virtualPages) text(c, "TAP TO SWITCH VIEW", x0, t1 - 16, LINE, 20);
+            float px = text(c, "tn@" + d.model.toLowerCase(Locale.US), x0, t1 - 16, MAGENTA, 24);
+            px = text(c, ":", px, t1 - 16, COMMENT, 24);
+            px = text(c, "~/" + tabLabel(d, vt[pg]).replace("+", "").toLowerCase(Locale.US), px, t1 - 16, BLUE, 24);
+            text(c, "$", px, t1 - 16, COMMENT, 24);
             y += 70;
         }
         // content modules, stacked top to bottom; whatever doesn't fit above the dock is counted, not drawn
@@ -1103,9 +1100,21 @@ public final class HudRenderer {
         if (hidden > 0) text(c, "+" + hidden + " MODULE" + (hidden > 1 ? "S" : "") + " HIDDEN · NO ROOM · USE TABS OR TURN SOME OFF IN THE APP", x0, y + 10, COMMENT, 22);
         if (d.noDock) {
             boolean off = d.net == null || "OFFLINE".equals(d.net);
-            readouts(c, off ? "SYS//OFFLINE" : "SYS//ONLINE", "UNIT " + d.model + " · LINK ", (off ? "OFFLINE" : d.net) + (d.vpn ? "+VPN" : ""), off ? RED : GREEN, false, dec, seed + 300);
-            String hint = "\u2191 SWIPE UP · APPS";
-            textR(c, hint, xr, H - M - 122, LINE, 22);
+            float b0 = H - M - 210, b1 = b0 + 96;                       // command line (the drawer search is one swipe away)
+            fill(0xFF05070D); rect(c, x0, b0, xr, b1);
+            stroke(ACCENT, 2); rect(c, x0, b0, xr, b1);
+            float cy = (b0 + b1) / 2 + 10;
+            float ex = text(c, "\u276F ", x0 + 28, cy, GREEN, 30);
+            ex = text(c, "run, open or ask\u2026", ex, cy, COMMENT, 30);
+            fill(ACCENT); rect(c, ex + 12, cy - 26, ex + 28, cy + 4);
+            String sw = "\u2191 SWIPE";
+            float sw0 = xr - 28 - tw(sw, 20) - 16;
+            stroke(BORDER, 2); rect(c, sw0, cy - 26, xr - 28, cy + 6);
+            textC(c, sw, (sw0 + xr - 28) / 2, cy - 2, COMMENT, 20);
+            float sy = b1 + 56;
+            float lx = text(c, decode(off ? "SYS//OFFLINE" : "SYS//ONLINE", dec, seed + 300), x0, sy, COMMENT, 22);
+            lx = text(c, decode("  " + d.model + " \u00B7 LINK ", dec, seed + 301), lx, sy, COMMENT, 22);
+            text(c, decode((off ? "OFFLINE" : d.net) + (d.vpn ? "+VPN" : ""), dec, seed + 302), lx, sy, off ? RED : GREEN, 22);
         }
     }
 
@@ -1114,8 +1123,7 @@ public final class HudRenderer {
 
     private void widgetBlock(Canvas c, Data d, float y0, float y1) {
         float x0 = M + 40, xr = W - M - 40, b0 = y0 + 60;
-        sectionTitle(c, "// WIDGET", d.widgetLabel, y0);
-        stroke(LINE, 2); box(c, x0, b0, xr, y1);
+        fieldset(c, x0, b0, xr, y1, "widget", d.widgetLabel, ACCENT);
         if (!d.launcherMode) textC(c, "NEEDS THE TN-HUD LAUNCHER", (x0 + xr) / 2, (b0 + y1) / 2 + 8, COMMENT, 22);
         else if (d.widgetLabel == null) textC(c, "LONG-PRESS HOME \u203A CHOOSE WIDGET", (x0 + xr) / 2, (b0 + y1) / 2 + 8, COMMENT, 22);
         wgL = Math.round((x0 + 6) * s); wgT = Math.round((b0 + 6) * s); wgR = Math.round((xr - 6) * s); wgB = Math.round((y1 - 6) * s);
@@ -1128,34 +1136,61 @@ public final class HudRenderer {
         for (int i = 0; i < d.scN; i++) {
             float a = x0 + i * (w + gap), b = a + w;
             boolean ok = d.scOk[i];
-            fill(alpha(ok ? BLUE : LINE, ok ? 0.14f : 0.3f)); box(c, a, y0, b, y1);
-            stroke(ok ? BLUE : LINE, 2); box(c, a, y0, b, y1);
-            text(c, String.format(Locale.US, "%02d", i + 1), a + 18, y0 + 26, ok ? CYAN : COMMENT, 16);
+            stroke(BORDER, 2); box(c, a, y0, b, y1);
+            text(c, String.format(Locale.US, "%02d", i + 1), a + 16, y0 + 26, COMMENT, 16);
             String l = d.scLabel[i] == null ? "--" : d.scLabel[i];
-            textC(c, fit(l, 26, w - 36), (a + b) / 2, y1 - 26, ok ? FG : COMMENT, 26);
-            if (d.scBadge[i] > 0) textR(c, "[" + (d.scBadge[i] > 99 ? "99+" : String.valueOf(d.scBadge[i])) + "]", b - 16, y0 + 28, CYAN, 20);
-            else { fill(ok ? BLUE : LINE); rect(c, b - 34, y0 + 14, b - 18, y0 + 18); }         // HUD tick
+            String bd = d.scBadge[i] > 0 ? (d.scBadge[i] > 99 ? "99+" : String.valueOf(d.scBadge[i])) : null;
+            float bw = bd == null ? 0 : tw(bd, 20) + 12;
+            String lf = fit(l, 26, w - 36 - (bw > 0 ? bw + 10 : 0));
+            float lw = tw(lf, 26) + (bw > 0 ? bw + 10 : 0), lx = (a + b) / 2 - lw / 2, ly = (y0 + y1) / 2 + 12;
+            float le = text(c, lf, lx, ly, ok ? FG : COMMENT, 26);
+            if (bd != null) { fill(ACCENT); rect(c, le + 10, ly - 22, le + 10 + bw, ly + 4); textC(c, bd, le + 10 + bw / 2, ly, BLACK, 20); }
             tap(a, y0, b, y1, A_SHORTCUT, i);
         }
     }
 
     // ---------------------------------------------------------------- media, to-do, notes
     private void sectionTitle(Canvas c, String t, String sub, float y) {
-        float x0 = M + 40, xr = W - M - 40;
-        text(c, t, x0, y + 30, BLUE, 24);
-        if (sub != null) text(c, " · " + sub, x0 + tw(t, 24), y + 30, COMMENT, 24);
-        stroke(LINE, 2); ln(c, x0, y + 44, xr, y + 44);
+        header(c, sub == null ? t : t + " \u00B7 " + sub, M + 40, y + 30, W - 2 * M - 80);
     }
 
-    private void box(Canvas c, float x0, float y0, float x1, float y1) {
-        poly(c, true, x0 + 18, y0, x1, y0, x1, y1 - 18, x1 - 18, y1, x0, y1, x0, y0 + 18);
+    private void box(Canvas c, float x0, float y0, float x1, float y1) { rect(c, x0, y0, x1, y1); }
+
+    /** concept "fieldset": square border, label notched into the top edge (e.g. "htop --mini"); returns the label's right edge */
+    private float fieldset(Canvas c, float x0, float y0, float x1, float y1, String label, String sub, int col) {
+        return fieldset(c, x0, y0, x1, y1, label, sub, col, x0 + 30);
+    }
+
+    /** same, label starting at lx (clear of artwork that reaches the top edge) */
+    private float fieldset(Canvas c, float x0, float y0, float x1, float y1, String label, String sub, int col, float lx) {
+        stroke(BORDER, 2); rect(c, x0, y0, x1, y1);
+        if (label == null) return x0;
+        String sb = sub == null ? null : " \u00B7 " + sub;
+        float wl = tw(label, 24) + (sb == null ? 0 : tw(sb, 24));
+        wl = Math.min(wl, Math.max(0, x1 - 260 - lx));
+        fill(BLACK); rect(c, lx - 12, y0 - 14, lx + wl + 12, y0 + 14);
+        float e = text(c, label, lx, y0 + 9, col, 24);
+        if (sb != null) e = text(c, fit(sb, 24, lx + wl - e), e, y0 + 9, COMMENT, 24);
+        return e;
+    }
+
+    /** terminal label form of a section title: "// SKY · NOW" -> "sky · now" */
+    private static String lbl(String t) {
+        if (t.startsWith("// ")) t = t.substring(3);
+        return t.toLowerCase(Locale.US);
+    }
+
+    /** concept status rule: accent for the first 18 %, border colour after */
+    private void rule(Canvas c, float x0, float x1, float y, int accent) {
+        float m = x0 + (x1 - x0) * 0.18f;
+        stroke(BORDER, 2); ln(c, m, y, x1, y);
+        stroke(accent, 3); ln(c, x0, y, m, y);
     }
 
     /** media: what's playing (when the player broadcasts it) + prev / play-pause / next */
     private void musicBlock(Canvas c, Data d, float y) {
         float x0 = M + 40, xr = W - M - 40, b0 = y + 60, b1 = y + 160;
-        sectionTitle(c, "// MEDIA", d.mApp != null ? d.mApp : null, y);
-        stroke(LINE, 2); box(c, x0, b0, xr, b1);
+        fieldset(c, x0, b0, xr, b1, "/dev/audio", d.mApp, MAGENTA);
         float bx = xr - 3 * 100 - 10;
         String t = d.mTitle != null ? d.mTitle.toUpperCase(Locale.US) : d.mPlaying ? "PLAYING" : "NOTHING PLAYING";
         text(c, fit(t, 30, bx - x0 - 60), x0 + 28, b0 + 44, d.mTitle != null ? FG : d.mPlaying ? CYAN : COMMENT, 30);
@@ -1165,8 +1200,8 @@ public final class HudRenderer {
         int[] acts = {A_MEDIA_PREV, A_MEDIA_PLAY, A_MEDIA_NEXT};
         for (int i = 0; i < 3; i++) {
             float cx = bx + 50 + i * 100, cy = (b0 + b1) / 2;
-            if (i == 1) { fill(d.mPlaying ? CYAN : BLUE); c.drawCircle(cx * s, cy * s, 34 * s, p); }
-            else { stroke(LINE, 2); c.drawCircle(cx * s, cy * s, 30 * s, p); }
+            if (i == 1) { fill(MAGENTA); rect(c, cx - 38, cy - 38, cx + 38, cy + 38); }
+            else { stroke(BORDER, 2); rect(c, cx - 36, cy - 36, cx + 36, cy + 36); }
             int gc = i == 1 ? BLACK : FG;
             fill(gc);
             if (i == 0) { poly(c, true, cx + 12, cy - 13, cx + 12, cy + 13, cx - 6, cy); rect(c, cx - 12, cy - 13, cx - 7, cy + 13); }
@@ -1186,9 +1221,9 @@ public final class HudRenderer {
         float w = (xr - x0 - 3 * gap) / 4;
         for (int i = 0; i < 4; i++) {
             float a = x0 + i * (w + gap);
-            if (i < 2) fill(alpha(BLUE, 0.18f)); else fill(BLACK);
+            fill(i < 2 ? alpha(ACCENT, 0.10f) : BLACK);
             box(c, a, b0, a + w, b1);
-            stroke(i < 2 ? BLUE : LINE, 2); box(c, a, b0, a + w, b1);
+            stroke(i < 2 ? ACCENT : BORDER, 2); box(c, a, b0, a + w, b1);
             textC(c, fit(lb[i], 20, w - 20), a + w / 2, b0 + 38, i < 2 ? FG : COMMENT, 20);
             tap(a, b0, a + w, b1, ac[i], 0);
         }
@@ -1197,11 +1232,11 @@ public final class HudRenderer {
     /** search bar: opens Google search; mic opens voice search */
     private void searchBlock(Canvas c, float y) {
         float x0 = M + 40, xr = W - M - 40, t0 = y + 30, t1 = y + 110;
-        stroke(LINE, 2);
-        poly(c, true, x0 + 20, t0, xr, t0, xr, t1 - 20, xr - 20, t1, x0, t1, x0, t0 + 20);
-        stroke(CYAN, 3); c.drawCircle((x0 + 50) * s, (t0 + 36) * s, 14 * s, p); ln(c, x0 + 60, t0 + 46, x0 + 72, t0 + 58);
-        float ex = text(c, "// SEARCH", x0 + 96, t0 + 50, COMMENT, 28);
-        fill(CYAN); rect(c, ex + 10, t0 + 26, ex + 26, t0 + 54);
+        fill(0xFF05070D); rect(c, x0, t0, xr, t1);
+        stroke(BORDER, 2); rect(c, x0, t0, xr, t1);
+        float ex = text(c, "\u276F ", x0 + 28, t0 + 50, GREEN, 28);
+        ex = text(c, "search the web\u2026", ex, t0 + 50, COMMENT, 28);
+        fill(ACCENT); rect(c, ex + 10, t0 + 26, ex + 26, t0 + 54);
         float mx = xr - 60, my = t0 + 40;
         stroke(MAGENTA, 3);
         rect(c, mx - 9, my - 22, mx + 9, my + 6);
@@ -1226,13 +1261,13 @@ public final class HudRenderer {
         int hh = cal.get(Calendar.HOUR_OF_DAY), mm = cal.get(Calendar.MINUTE), ss = cal.get(Calendar.SECOND);
         String hm = d.h24 ? String.format(Locale.US, "%02d:%02d", hh, mm)
                 : String.format(Locale.US, "%d:%02d", (hh + 11) % 12 + 1, mm);
-        float cx = holo(c, decode(hm, dec, seed), x0 - 8, 334, 236, FG, CYAN, CYAN);
-        holo(c, String.format(Locale.US, ":%02d", ss), cx + 4, 334, 66, CYAN, BLUE, BLUE);
+        float cx = holo(c, decode(hm, dec, seed), x0 - 8, 334, 236, FG, ACCENT);
+        holo(c, String.format(Locale.US, ":%02d", ss), cx + 4, 334, 84, COMMENT, 0);
         if (!d.h24 && !d.clockUtc) textF(c, hh < 12 ? "AM" : "PM", cx + 12, 258, COMMENT, 38);
         if (d.clockUtc) textF(c, "UTC", cx + 12, 258, MAGENTA, 38);
-        String date = (d.clockUtc ? "UTC " : "") + String.format(Locale.US, "%ta %<td %<tb", cal).toUpperCase(Locale.US)
-                + String.format(Locale.US, " · WK %02d", cal.get(Calendar.WEEK_OF_YEAR));
+        String date = (d.clockUtc ? "UTC " : "") + String.format(Locale.US, "%ta %<td %<tb", cal).toUpperCase(Locale.US);
         float de = textF(c, decode(date, dec, seed + 1), x0, 402, FG, 38);
+        de = textF(c, decode(String.format(Locale.US, "  WK %02d  DOY %03d", cal.get(Calendar.WEEK_OF_YEAR), cal.get(Calendar.DAY_OF_YEAR)), dec, seed + 6), de, 402, COMMENT, 38);
         float uw = tw("UTC", 20) + 28;
         chipR(c, "UTC", de + 20 + uw, 398, d.clockUtc, A_UTC, 0);
         fill(YELLOW); poly(c, true, x0 + 8, 432, x0 + 18, 442, x0 + 8, 452, x0 - 2, 442);
@@ -1244,7 +1279,7 @@ public final class HudRenderer {
         float x0 = M + 40, xr = W - M - 40;
         if (d.wallMs < d.wxHourlyUntil && d.hrT != null) { hourlyStrip(c, d, xr - 430, xr); return; }
         // ---- weather (right)
-        textR(c, "// WX · " + (d.wxCity != null ? d.wxCity : "NO LOCATION"), xr, 170, COMMENT, 24);
+        textR(c, "wx@" + (d.wxCity != null ? d.wxCity.toLowerCase(Locale.US) : "no-location"), xr, 170, COMMENT, 24);
         if (!Float.isNaN(d.wxTemp)) {
             int tcol = d.wxTemp <= 0 ? CYAN : d.wxTemp >= 25 ? YELLOW : FG;
             textFR(c, decode(String.format(Locale.US, "%.0f°", d.wxTemp), dec, seed + 3), xr, 322, tcol, 168);
@@ -1359,12 +1394,7 @@ public final class HudRenderer {
         text(c, decode("CELL", dec, seed + 6), x0, y0, COMMENT, 26);
         float ex = text(c, decode(String.format(Locale.US, "%03d%%", lvl), dec, seed + 7), x0 + 90, y0, FG, 26);
         if (d.charging) text(c, decode(" CHG", dec, seed + 8), ex, y0, CYAN, 26);
-        int on = Math.round(lvl / 5f * dec);
-        for (int i = 0; i < 20; i++) {
-            float sx = x0 + i * 32, sy = y0 + 22;
-            if (i < on) fill(bc); else stroke(LINE, 2);
-            poly(c, true, sx + 8, sy, sx + 30, sy, sx + 22, sy + 28, sx, sy + 28);
-        }
+        bar(c, x0, y0 + 20, lvl / 100f * dec, bc);
         float ry0 = y0 + 100;
         float ramUsed = d.ramTotal > 0 ? 1f - d.ramAvail / (float) d.ramTotal : 0f;
         text(c, decode("RAM", dec, seed + 9), x0, ry0, COMMENT, 26);
@@ -1414,7 +1444,7 @@ public final class HudRenderer {
             int bl = d.btLvl2[i] >= 0 ? Math.min(d.btLvl[i], d.btLvl2[i]) : d.btLvl[i];
             int col = bl < 0 ? COMMENT : bl > 50 ? GREEN : bl > 20 ? YELLOW : RED;
             int segs = bl < 0 ? 0 : Math.round(bl / 10f * dec);
-            for (int k = 0; k < 10; k++) { fill(k < segs ? col : LINE); rect(c, xr - 330 + k * 22, by - 18, xr - 330 + k * 22 + 16, by - 2); }
+            for (int k = 0; k < 20; k++) { fill(k < segs * 2 ? col : BORDER); rect(c, xr - 330 + k * 11, by - 20, xr - 330 + k * 11 + 5, by); }
             textR(c, d.btLvl[i] < 0 ? "--" : d.btLvl2[i] >= 0 ? d.btLvl[i] + "\u00B7" + d.btLvl2[i] + "%" : d.btLvl[i] + "%", xr, by, col, 24);
             by += 44;
         }
@@ -1470,13 +1500,10 @@ public final class HudRenderer {
         String sub = d.calView == 0 ? String.format(Locale.US, "DAY · %ta %<td %<tb", cn).toUpperCase(Locale.US)
                 : d.calView == 1 ? String.format(Locale.US, "WEEK %02d", cn.get(Calendar.WEEK_OF_YEAR))
                 : String.format(Locale.US, "%tB %<tY", cn).toUpperCase(Locale.US);
-        String title = "// CALENDAR · " + sub;
-        text(c, title, x0, y + 30, BLUE, 24);
-        float cxr = chipR(c, "+", xr, y + 30, false, A_NEWEVENT, 0) - 18;
+        fieldset(c, x0, py, xr, py + ph, "cal", sub.toLowerCase(Locale.US), ACCENT);
+        float cxr = chipR(c, "+", xr - 24, py + 8, false, A_NEWEVENT, 0) - 14;
         String[] cv = {"DAY", "WEEK", "MONTH"};
-        for (int i = 2; i >= 0; i--) cxr = chipR(c, cv[i], cxr, y + 30, d.calView == i, A_CALVIEW, i) - 10;
-        stroke(LINE, 2); ln(c, x0, y + 44, xr, y + 44);
-        poly(c, true, x0 + 18, py, xr, py, xr, py + ph - 18, xr - 18, py + ph, x0, py + ph, x0, py + 18);
+        for (int i = 2; i >= 0; i--) cxr = chipR(c, cv[i], cxr, py + 8, d.calView == i, A_CALVIEW, i) - 8;
 
         if (d.calState != null && d.calState.startsWith("GRANT")) {
             textC(c, "GRANT CALENDAR ACCESS IN THE TN-HUD APP", (x0 + xr) / 2, py + ph / 2, YELLOW, 26);
@@ -1631,7 +1658,7 @@ public final class HudRenderer {
                 float cx0 = gx0 + k * cw, cy0 = gy0 + r * rh;
                 tap(cx0, cy0, cx0 + cw, cy0 + rh, A_DAY, d0);
                 stroke(LINE, 1.5f); rect(c, cx0 + 2, cy0 + 2, cx0 + cw - 4, cy0 + rh - 4);
-                if (isToday) { fill(BLUE); poly(c, true, cx0 + 12, cy0 + 2, cx0 + cw - 4, cy0 + 2, cx0 + cw - 4, cy0 + rh - 4, cx0 + 2, cy0 + rh - 4, cx0 + 2, cy0 + 12); }
+                if (isToday) { fill(ACCENT); rect(c, cx0 + 2, cy0 + 2, cx0 + cw - 4, cy0 + rh - 4); }
                 int nc = isToday ? BLACK : !inMonth ? LINE : past ? COMMENT : k >= 5 ? MAGENTA : FG;
                 text(c, String.valueOf(dc.get(Calendar.DAY_OF_MONTH)), cx0 + 12, cy0 + 30, nc, 24);
                 int dots = 0;
@@ -1645,9 +1672,10 @@ public final class HudRenderer {
         }
     }
 
+    /** open section label: "diagnostics ────────" in the accent colour, rule level with the text */
     private void header(Canvas c, String t, float x, float y, float w) {
-        text(c, t, x, y, BLUE, 24);
-        stroke(LINE, 2); ln(c, x, y + 14, x + w, y + 14);
+        float e = text(c, lbl(t), x, y, ACCENT, 24);
+        stroke(BORDER, 2); ln(c, Math.min(e + 16, x + w), y - 8, x + w, y - 8);
     }
 
     private static String wmo(int code) {
@@ -1685,10 +1713,7 @@ public final class HudRenderer {
     private void music(Canvas c, Data d, float dec, long seed) {
         float x0 = M + 40, xr = W - M - 40, y0 = 2110, ph = 420;
         if (H - M - 250 < y0 + ph) return;                       // not enough room on short screens
-        text(c, "// NOW PLAYING", x0, y0 - 40, BLUE, 24);
-        if (d.mApp != null) text(c, " · " + d.mApp, x0 + tw("// NOW PLAYING", 24), y0 - 40, COMMENT, 24);
-        stroke(LINE, 2); ln(c, x0, y0 - 26, xr, y0 - 26);
-        poly(c, true, x0 + 18, y0, xr, y0, xr, y0 + ph - 18, xr - 18, y0 + ph, x0, y0 + ph, x0, y0 + 18);
+        fieldset(c, x0, y0, xr, y0 + ph, "/dev/audio", d.mApp, MAGENTA);
 
         // circular spectrum: 32 bands mirrored -> 64 spokes
         float cx = x0 + 230, cy = y0 + ph / 2, r0 = 86, L = 100;
@@ -1801,14 +1826,11 @@ public final class HudRenderer {
             now = t.getTimeInMillis();
         }
         String title = d.skyMode == 1 ? "// SKY \u00B7 22:00" : d.skyMode == 2 ? "// SKY \u00B7 PLANETS" : "// SKY \u00B7 NOW";
-        text(c, title, x0, y0 - 40, d.skyMode == 0 ? BLUE : MAGENTA, 24);
-        float cxr = xr;
+        fieldset(c, x0, y0, xr, y0 + ph, lbl(title), Double.isNaN(d.obsLat) ? "no location" : String.format(Locale.US, "%.2f\u00B0%s %.2f\u00B0%s", Math.abs(d.obsLat), d.obsLat >= 0 ? "N" : "S",
+                Math.abs(d.obsLon), d.obsLon >= 0 ? "E" : "W"), d.skyMode == 0 ? ACCENT : BLUE, x0 + 480);
+        float cxr = xr - 24;
         String[] sm = {"NOW", "22:00", "PLANETS"};
-        for (int i = 2; i >= 0; i--) cxr = chipR(c, sm[i], cxr, y0 - 40, d.skyMode == i, A_SKYMODE, i) - 10;
-        text(c, Double.isNaN(d.obsLat) ? " NO LOCATION" : String.format(Locale.US, " %.2f\u00B0%s %.2f\u00B0%s \u00B7 TAP MAP", Math.abs(d.obsLat), d.obsLat >= 0 ? "N" : "S",
-                Math.abs(d.obsLon), d.obsLon >= 0 ? "E" : "W").replace(" \u00B7 TAP MAP", ""), x0 + tw(title, 24), y0 - 40, COMMENT, 24);
-        stroke(LINE, 2); ln(c, x0, y0 - 26, xr, y0 - 26);
-        poly(c, true, x0 + 18, y0, xr, y0, xr, y0 + ph - 18, xr - 18, y0 + ph, x0, y0 + ph, x0, y0 + 18);
+        for (int i = 2; i >= 0; i--) cxr = chipR(c, sm[i], cxr, y0 + ph + 8, d.skyMode == i, A_SKYMODE, i) - 8;
         float cx = x0 + 230, cy = y0 + ph / 2, R = 196;
         // map frame: horizon, 30/60 deg rings, cardinal ticks
         stroke(LINE, 3); c.drawCircle(cx * s, cy * s, R * s, p);
@@ -2027,9 +2049,7 @@ public final class HudRenderer {
     // ---------------------------------------------------------------- sensor lab
     private void lab(Canvas c, Data d, float dec, long seed, float y0) {
         float x0 = M + 40, xr = W - M - 40, ph = 360;
-        text(c, "// 24H CYCLE \u00B7 SENSOR LAB", x0, y0 - 40, BLUE, 24);
-        stroke(LINE, 2); ln(c, x0, y0 - 26, xr, y0 - 26);
-        poly(c, true, x0 + 18, y0, xr, y0, xr, y0 + ph - 18, xr - 18, y0 + ph, x0, y0 + ph, x0, y0 + 18);
+        fieldset(c, x0, y0, xr, y0 + ph, "24h cycle \u00B7 sensor lab", null, ACCENT);
         float cx = x0 + 190, cy = y0 + ph / 2, R = 118;
         dayDial(c, d, cx, cy, R);
         tap(cx - R - 20, cy - R - 20, cx + R + 20, cy + R + 20, HIT_DIAL, 0);
@@ -2078,9 +2098,7 @@ public final class HudRenderer {
     private void telemetry(Canvas c, Data d, float dec, long seed) {
         float x0 = M + 40, gap = 40, pw = (W - 2 * M - 80 - gap) / 2, phh = 200, x1 = x0 + pw + gap;
         float y0 = 1330;
-        text(c, "// LIVE TELEMETRY", x0, y0 - 40, BLUE, 24);
-        text(c, " 60S @1HZ · MOTION 15S @4HZ", x0 + tw("// LIVE TELEMETRY", 24), y0 - 40, COMMENT, 24);
-        stroke(LINE, 2); ln(c, x0, y0 - 26, x0 + 2 * pw + gap, y0 - 26);
+        header(c, "// LIVE TELEMETRY", x0, y0 - 40, 2 * pw + gap);
         int N = Data.N;
 
         String pv = Float.isNaN(d.pwrW) ? "--" : String.format(Locale.US, "%s%.2f W", d.pwrIn ? "IN " : "", d.pwrW);
@@ -2138,10 +2156,8 @@ public final class HudRenderer {
     }
 
     private void panel(Canvas c, float x, float y, float w, float h, String title, String value, int col) {
-        stroke(LINE, 2);
-        poly(c, true, x + 18, y, x + w, y, x + w, y + h - 18, x + w - 18, y + h, x, y + h, x, y + 18);
-        text(c, title, x + 20, y + 36, COMMENT, 22);
-        textR(c, value, x + w - 20, y + 36, col, 26);
+        fieldset(c, x, y, x + w, y + h, title.toLowerCase(Locale.US), null, ACCENT);
+        textR(c, value, x + w - 20, y + 40, col, 26);
         p.setStyle(Paint.Style.STROKE); p.setColor(LINE); p.setStrokeWidth(1.5f * s);
         p.setPathEffect(new DashPathEffect(new float[]{4 * s, 10 * s}, 0));
         float gy0 = y + 56, gy1 = y + h - 18;
@@ -2170,18 +2186,20 @@ public final class HudRenderer {
     }
 
     // ---------------------------------------------------------------- parts
+    private int frameCol = ACCENT;
     private void frame(Canvas c, int accent) {
-        stroke(accent, 5); poly(c, false, M, M + 260, M, M + 70, M + 70, M, M + 260, M);
-        stroke(COMMENT, 4);
-        poly(c, false, W - M - 180, M, W - M, M, W - M, M + 180);
-        poly(c, false, M, H - M - 180, M, H - M, M + 180, H - M);
-        stroke(MAGENTA, 5); poly(c, false, W - M, H - M - 260, W - M, H - M - 70, W - M - 70, H - M, W - M - 260, H - M);
-        fill(accent); poly(c, true, M + 300, M - 2, M + 520, M - 2, M + 502, M + 22, M + 300, M + 22);
+        frameCol = accent;
+        float k = 44, b = H - M;
+        stroke(accent, 3); poly(c, false, M, M + k, M, M, M + k, M);
+        stroke(BORDER, 2);
+        poly(c, false, W - M - k, M, W - M, M, W - M, M + k);
+        poly(c, false, M, b - k, M, b, M + k, b);
+        poly(c, false, W - M - k, b, W - M, b, W - M, b - k);
     }
 
     private void rail(Canvas c, long clock, int col, boolean animate) {
         float r0 = H * 0.29f;
-        stroke(LINE, 3);
+        stroke(BORDER, 2);
         for (int i = 0; i < 24; i++) ln(c, W - M - 8, r0 + i * 40, W - M - 8 - (i % 4 == 0 ? 30 : 14), r0 + i * 40);
         float by = animate ? r0 + (float) ((Math.sin(clock / 2600.0) * 0.5 + 0.5) * 16 * 40) : r0 + 6 * 40;
         stroke(col, 6); ln(c, W - M - 8, by, W - M - 8, by + 8 * 40);
@@ -2222,12 +2240,13 @@ public final class HudRenderer {
     }
 
     private void readouts(Canvas c, String l1, String l2, String tag, int tagCol, boolean cursor, float dec, long seed) {
-        float y = H - M - 210;
-        text(c, decode(l1, dec, seed), M + 24, y, COMMENT, 30);
-        float x = text(c, decode(l2, dec, seed + 1), M + 24, y + 44, COMMENT, 30);
+        float y = H - M - 210, x0 = M + 40;
+        float x1 = text(c, "\u276F ", x0, y, GREEN, 30);
+        text(c, decode(l1, dec, seed), x1, y, FG, 30);
+        float x = text(c, decode(l2, dec, seed + 1), x1, y + 44, COMMENT, 30);
         text(c, decode(tag, dec, seed + 2), x, y + 44, tagCol, 30);
-        float x3 = text(c, decode("TN//NIGHT_GRID ", dec, seed + 3), M + 24, y + 88, COMMENT, 30);
-        if (cursor) { fill(RED); rect(c, x3, y + 66, x3 + 16, y + 92); }
+        float x3 = text(c, decode("TN//NIGHT_GRID ", dec, seed + 3), x1, y + 88, COMMENT, 30);
+        if (cursor) { fill(tagCol); rect(c, x3, y + 66, x3 + 16, y + 92); }
     }
 
 
@@ -2362,9 +2381,11 @@ public final class HudRenderer {
     }
 
     // ---------------------------------------------------------------- helpers
-    private void bar(Canvas c, float x0, float y, float frac, int col) {
-        int on = Math.round(Math.max(0, Math.min(1, frac)) * 40);
-        for (int i = 0; i < 40; i++) { fill(i < on ? col : LINE); rect(c, x0 + i * 16, y, x0 + i * 16 + 11, y + 10); }
+    private void bar(Canvas c, float x0, float y, float frac, int col) { bar(c, x0, y, frac, col, 40); }
+    /** htop-style meter: n thin ticks, 16 units apart */
+    private void bar(Canvas c, float x0, float y, float frac, int col, int n) {
+        int on = Math.round(Math.max(0, Math.min(1, frac)) * n);
+        for (int i = 0; i < n; i++) { fill(i < on ? col : BORDER); rect(c, x0 + i * 16, y, x0 + i * 16 + 6, y + 24); }
     }
     private float diag(Canvas c, String k, String v, int col, float x, float y, float lw, float dec, long seed) {
         text(c, decode(k, dec, seed), x, y, COMMENT, 24);

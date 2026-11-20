@@ -73,7 +73,8 @@ import java.util.Locale;
  * Because the wallpaper is told a launcher is in front ("tnhud.launcher"), it ignores its own raw touches.
  */
 public class HudLauncher extends Activity {
-    static final int FG = 0xFFC0CAF5, COMMENT = 0xFF565F89, BLUE = 0xFF7AA2F7, CYAN = 0xFF7DCFFF, LINE = 0xFF3B4261, BG = 0xF0000000;
+    static final int FG = 0xFFC0CAF5, COMMENT = 0xFF737AA2, BLUE = 0xFF7AA2F7, CYAN = 0xFF7DCFFF, LINE = 0xFF3B4261, BG = 0xF5000000,
+            ACCENT = 0xFFBB9AF7, GREEN = 0xFF9ECE6A, YELLOW = 0xFFE0AF68, RED = 0xFFF7768E, INK = 0xFF05070D, TEXT2 = 0xFFA9B1D6;
 
     SharedPreferences sp;
     LauncherApps la;
@@ -93,6 +94,7 @@ public class HudLauncher extends Activity {
     static final class App {
         String label, sortKey, key; ComponentName cn; UserHandle user; boolean work; int launches; LauncherActivityInfo info;
         float score; long last;                                   // frecency: launches decayed with a 14-day time constant
+        volatile int elColor;                                     // element-icon category colour, 0 = not known yet
         float now(long t) { return last == 0 ? 0 : score * (float) Math.exp(-(t - last) / (14 * 86400000.0)); }
     }
     final ArrayList<App> apps = new ArrayList<App>();
@@ -520,32 +522,60 @@ public class HudLauncher extends Activity {
 
         LinearLayout top = new LinearLayout(this);
         top.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = tv("// APPS", 14, BLUE);
-        top.addView(title);
-        count = tv("", 14, COMMENT);
-        top.addView(count, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView set = tv("\u2699 HUD SETTINGS", 14, BLUE);
-        set.setPadding(px(12), px(10), px(12), px(10));
+        prompt = tv("", 13, COMMENT);
+        prompt.setSingleLine(true); prompt.setEllipsize(TextUtils.TruncateAt.END);
+        top.addView(prompt, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView set = tv("\u2699", 20, COMMENT);
+        set.setGravity(Gravity.CENTER);
+        set.setContentDescription("HUD settings");
         set.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { openSettings(); } });
-        top.addView(set);
+        top.addView(set, new LinearLayout.LayoutParams(px(48), px(44)));
         drawer.addView(top);
 
+        // fzf-style query line: ❯ prompt, the field, match count
+        LinearLayout sbox = new LinearLayout(this);
+        sbox.setGravity(Gravity.CENTER_VERTICAL);
+        GradientDrawable bd = new GradientDrawable();
+        bd.setColor(INK); bd.setStroke(px(1.5f), ACCENT); bd.setCornerRadius(0);
+        sbox.setBackground(bd);
+        sbox.setPadding(px(12), 0, px(12), 0);
+        sbox.addView(tv("\u276F", 18, GREEN));
         search = new EditText(this);
         search.setTypeface(mono);
         search.setTextColor(FG);
         search.setHintTextColor(COMMENT);
-        search.setHint("SEARCH · ENTER OPENS · > FOR COMMANDS");
+        search.setHint("filter \u00B7 > command");
         search.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
         search.setSingleLine(true);
         search.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS | InputType.TYPE_TEXT_VARIATION_FILTER);
         search.setImeOptions(EditorInfo.IME_ACTION_GO | EditorInfo.IME_FLAG_NO_EXTRACT_UI);
-        GradientDrawable bd = new GradientDrawable();
-        bd.setColor(0xFF0B0E17); bd.setStroke(px(1.5f), BLUE); bd.setCornerRadius(0);
-        search.setBackground(bd);
-        search.setPadding(px(14), px(12), px(14), px(12));
-        LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        slp.topMargin = px(10); slp.bottomMargin = px(8); slp.rightMargin = px(12);
-        drawer.addView(search, slp);
+        search.setBackground(null);
+        search.setPadding(px(10), px(12), px(10), px(12));
+        sbox.addView(search, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        count = tv("", 12, COMMENT);
+        sbox.addView(count);
+        LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(52));
+        slp.topMargin = px(6); slp.rightMargin = px(12);
+        drawer.addView(sbox, slp);
+
+        // shortcuts of the top match (fzf preview), then key hints / category chips
+        scStrip = new LinearLayout(this);
+        scStrip.setOrientation(LinearLayout.VERTICAL);
+        GradientDrawable sb = new GradientDrawable(); sb.setColor(0); sb.setStroke(px(1), LINE);
+        scStrip.setBackground(sb);
+        scStrip.setPadding(px(10), px(6), px(10), px(6));
+        scStrip.setVisibility(View.GONE);
+        LinearLayout.LayoutParams sclp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        sclp.topMargin = px(8); sclp.rightMargin = px(12);
+        drawer.addView(scStrip, sclp);
+        android.widget.HorizontalScrollView hs = new android.widget.HorizontalScrollView(this);
+        hs.setHorizontalScrollBarEnabled(false);
+        chips = new LinearLayout(this);
+        chips.setGravity(Gravity.CENTER_VERTICAL);
+        hs.addView(chips);
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        clp.topMargin = px(8); clp.bottomMargin = px(4); clp.rightMargin = px(12);
+        drawer.addView(hs, clp);
         search.addTextChangedListener(new TextWatcher() {
             public void beforeTextChanged(CharSequence s, int a, int b, int c) { }
             public void onTextChanged(CharSequence s, int a, int b, int c) { }
@@ -557,7 +587,7 @@ public class HudLauncher extends Activity {
         body.setOrientation(LinearLayout.HORIZONTAL);
         list = new DrawerList(this);
         list.setDivider(null);
-        list.setSelector(new android.graphics.drawable.ColorDrawable(0x22_7AA2F7));
+        list.setSelector(new android.graphics.drawable.ColorDrawable(0x22_BB9AF7));
         list.setVerticalScrollBarEnabled(false);
         list.setOverScrollMode(View.OVER_SCROLL_NEVER);
         list.setAdapter(adapter);
@@ -591,7 +621,7 @@ public class HudLauncher extends Activity {
                 int i = Math.max(0, Math.min(n - 1, (int) (e.getY() / rail.getHeight() * n)));
                 String letter = ((TextView) rail.getChildAt(i)).getText().toString();
                 for (int k = 0; k < rows.size(); k++) if (letter.equals(rows.get(k))) { list.setSelectionFromTop(k, 0); break; }
-                for (int k = 0; k < n; k++) ((TextView) rail.getChildAt(k)).setTextColor(k == i && e.getActionMasked() != MotionEvent.ACTION_UP ? CYAN : COMMENT);
+                for (int k = 0; k < n; k++) ((TextView) rail.getChildAt(k)).setTextColor(k == i && e.getActionMasked() != MotionEvent.ACTION_UP ? ACCENT : COMMENT);
                 if (e.getActionMasked() == MotionEvent.ACTION_DOWN) { hideKeyboard(); v.performHapticFeedback(1); }
                 return true;
             }
@@ -606,7 +636,7 @@ public class HudLauncher extends Activity {
     }
 
     void openDrawer() {
-        showHidden = false;
+        showHidden = false; catSel = 0;
         search.setText("");
         filter();
         checkIconSig();
@@ -665,6 +695,7 @@ public class HudLauncher extends Activity {
                 a.last = sp.getLong("lt_" + a.key, 0);
                 a.score = sp.getFloat("lf_" + a.key, a.launches);
                 if (a.last == 0 && a.launches > 0) a.last = System.currentTimeMillis();
+                a.elColor = sp.getInt("ec_" + a.key, 0);
                 apps.add(a);
             }
         }
@@ -719,15 +750,28 @@ public class HudLauncher extends Activity {
         String raw = search == null ? "" : search.getText().toString().trim();
         if (Commands.isCommandLine(raw)) { filterCommands(raw); return; }
         String q = norm(raw);
+        lastQ = q;
         boolean showHidden = q.length() > 0 && sp.getBoolean("lnSearchHidden", true);
         int visible = 0;
-        if (q.isEmpty()) {
+        style = Math.max(0, Math.min(3, sp.getInt("lnStyle", 0)));
+        boolean periodic = style >= 2 && sp.getBoolean("lnIconElement", false);
+        if (!periodic) catSel = 0;
+        if (style == ST_TEXT) rows.add(COLS);
+        if (q.isEmpty() && catSel != 0) {                          // element grid filtered by a category chip
+            ArrayList<App> m = new ArrayList<App>();
+            final long now = System.currentTimeMillis();
+            for (App a : apps) if (!hidden(a) && (catSel == -1 ? a.now(now) > 0.05f : a.elColor == catSel)) m.add(a);
+            if (catSel == -1) Collections.sort(m, new Comparator<App>() { public int compare(App x, App y) { return Float.compare(y.now(now), x.now(now)); } });
+            rows.addAll(m);
+            visible = m.size();
+            if (m.isEmpty()) rows.add("NOTHING IN THIS GROUP YET");
+        } else if (q.isEmpty()) {
             if (sp.getBoolean("lnFrequent", true)) {
                 ArrayList<App> fr = new ArrayList<App>();
                 final long now = System.currentTimeMillis();
                 for (App a : apps) if (a.now(now) > 0.05f && !hidden(a)) fr.add(a);
                 Collections.sort(fr, new Comparator<App>() { public int compare(App x, App y) { return Float.compare(y.now(now), x.now(now)); } });
-                if (!fr.isEmpty()) { rows.add("// FREQUENT"); rows.addAll(fr.subList(0, Math.min(5, fr.size()))); }
+                if (!fr.isEmpty()) { rows.add("\u2605 FREQ"); rows.addAll(fr.subList(0, Math.min(5, fr.size()))); }
             }
             String cur = null;
             int nHidden = 0;
@@ -757,7 +801,6 @@ public class HudLauncher extends Activity {
             visible = m.size();
             if (m.isEmpty()) rows.add("NO MATCH · ENTER SEARCHES THE WEB");
         }
-        style = Math.max(0, Math.min(3, sp.getInt("lnStyle", 0)));
         cols = Math.max(3, Math.min(6, sp.getInt("lnCols", 4)));
         if (style >= 2) {                                         // grid: runs of apps become rows of 'cols' cells
             ArrayList<Object> g = new ArrayList<Object>();
@@ -770,7 +813,12 @@ public class HudLauncher extends Activity {
             if (!run.isEmpty()) g.add(run.toArray(new App[0]));
             rows.clear(); rows.addAll(g);
         }
-        count.setText("  · " + visible);
+        int total = 0;
+        for (App a : apps) if (!hidden(a)) total++;
+        count.setText(visible + "/" + total);
+        setPrompt(periodic ? "periodic --apps" : style == ST_TEXT ? "ls -lt | fzf" : "ls --icons | fzf");
+        buildChips(periodic && q.isEmpty());
+        showShortcuts(q.isEmpty() ? null : topApp());
         adapter.notifyDataSetChanged();
         list.setSelection(0);
         // A-Z rail (only without a query)
@@ -789,7 +837,9 @@ public class HudLauncher extends Activity {
         java.util.ArrayList<Commands.Cmd> m = Commands.match(Commands.split(raw)[0]);
         rows.add(m.isEmpty() ? "UNKNOWN COMMAND · > HELP LISTS THEM" : "// COMMANDS");
         rows.addAll(m);
-        count.setText("  · " + m.size());
+        count.setText(m.size() + " cmd");
+        setPrompt("tnhud " + raw.substring(1).trim());
+        buildChips(false); showShortcuts(null);
         adapter.notifyDataSetChanged();
         list.setSelection(0);
         rail.removeAllViews();
@@ -1001,7 +1051,7 @@ public class HudLauncher extends Activity {
     CharSequence commandLabel(Commands.Cmd c, boolean top) {
         String head = "\u203A " + c.name.toUpperCase(Locale.ROOT), args = c.args == null ? "" : " " + c.args, tail = "   " + c.help;
         android.text.SpannableString ss = new android.text.SpannableString(head + args + tail);
-        ss.setSpan(new android.text.style.ForegroundColorSpan(top ? CYAN : FG), 0, head.length(), 0);
+        ss.setSpan(new android.text.style.ForegroundColorSpan(top ? ACCENT : FG), 0, head.length(), 0);
         ss.setSpan(new android.text.style.ForegroundColorSpan(BLUE), head.length(), head.length() + args.length(), 0);
         ss.setSpan(new android.text.style.ForegroundColorSpan(COMMENT), head.length() + args.length(), ss.length(), 0);
         ss.setSpan(new android.text.style.RelativeSizeSpan(0.72f), head.length() + args.length(), ss.length(), 0);
@@ -1179,20 +1229,30 @@ public class HudLauncher extends Activity {
         final ColorMatrixColorFilter tint = iconFilter();
         final boolean original = sp.getBoolean("lo_" + a.key, false);   // per-app: keep the app's own icon, no pack or colour
         final boolean neon = !original && sp.getInt("lnIconTint", 0) == 2;
+        final boolean element = !original && iconSigElement;
+        final String label = a.label;
         final ColorMatrixColorFilter tintF = original ? null : tint;
         final LauncherActivityInfo info = a.info;
         final boolean work = a.work;
-        final String sig = iconSig, key = a.key, pkg = a.cn.getPackageName();
+        final String sig = iconSig, key = element ? a.key + "|" + a.label : a.key, pkg = a.cn.getPackageName();
         final ComponentName cn = a.cn;
         iconExec.execute(new Runnable() { public void run() {
             Bitmap bm = null;
             java.io.File f = iconFile(sig, pkg, key);
             try { if (f.exists()) bm = BitmapFactory.decodeFile(f.getPath()); } catch (Throwable ignored) { }
+            if (element && a.elColor == 0) bm = null;               // cached tile but colour unknown (prefs cleared): render again
             if (bm == null || bm.getWidth() != size) {
                 try {
-                    IconPacks pack = original || work ? null : pack();
-                    Drawable d = pack == null ? null : pack.icon(cn, dpi);
-                    bm = renderIcon(d != null ? d : info.getBadgedIcon(dpi), size, frame && loadFrames(), tintF, neon, work);
+                    if (element) {
+                        int ec = elementColor(info, dpi);
+                        if (ec != a.elColor) { a.elColor = ec; sp.edit().putInt("ec_" + a.key, ec).apply(); }
+                        bm = renderElement(label, ec, size, work);
+                    }
+                    else {
+                        IconPacks pack = original || work ? null : pack();
+                        Drawable d = pack == null ? null : pack.icon(cn, dpi);
+                        bm = renderIcon(d != null ? d : info.getBadgedIcon(dpi), size, frame && loadFrames(), tintF, neon, work);
+                    }
                     if (bm != null) saveIcon(f, bm);
                 } catch (Throwable ignored) { }
             }
@@ -1278,15 +1338,97 @@ public class HudLauncher extends Activity {
         return out;
     }
 
-    boolean iconSigFrame; int iconSigTint = -1; String iconSigPack = null, iconSig = "";
+    // ---- "element" icons: the concept's periodic-table tile (chamfered 20 % top-left / bottom-right),
+    //      a two-letter symbol in the category colour; no app artwork
+    static final int EL_DEV = 0xFF9ECE6A, EL_COMMS = 0xFF7DCFFF, EL_MEDIA = 0xFFBB9AF7, EL_SYS = 0xFF7AA2F7,
+            EL_NAV = 0xFFE0AF68, EL_GAME = 0xFFFF9E64, EL_ALERT = 0xFFF7768E;
+    static final int[] EL_PAL = {EL_DEV, EL_COMMS, EL_MEDIA, EL_SYS, EL_NAV, EL_GAME, EL_ALERT};
+
+    /** "WhatsApp" -> "Wa", "SSH Client" -> "Sc" */
+    static String elementSymbol(String label) {
+        String t = label == null ? "" : label.trim();
+        StringBuilder b = new StringBuilder();
+        for (String w : t.split("[\\s_\\-.]+")) if (w.length() > 0 && Character.isLetterOrDigit(w.charAt(0))) b.append(w.charAt(0));
+        String sym;
+        if (b.length() >= 2) sym = b.substring(0, 2);
+        else { String l = t.replaceAll("[^\\p{L}\\p{N}]", ""); sym = l.length() >= 2 ? l.substring(0, 2) : l.length() == 1 ? l : "?"; }
+        return sym.substring(0, 1).toUpperCase(Locale.getDefault()) + sym.substring(1).toLowerCase(Locale.getDefault());
+    }
+
+    /** category colour: the app's declared category (API 26+), else system apps blue, else the icon's dominant hue */
+    int elementColor(LauncherActivityInfo info, int dpi) {
+        android.content.pm.ApplicationInfo ai = info.getApplicationInfo();
+        int cat = -1;
+        if (Build.VERSION.SDK_INT >= 26) try { cat = ai.getClass().getField("category").getInt(ai); } catch (Throwable ignored) { }
+        switch (cat) {
+            case 0: return EL_GAME;                          // CATEGORY_GAME
+            case 1: case 2: case 3: return EL_MEDIA;         // AUDIO, VIDEO, IMAGE
+            case 4: return EL_COMMS;                         // SOCIAL
+            case 5: return EL_NAV;                           // NEWS
+            case 6: return EL_NAV;                           // MAPS
+            case 7: return EL_DEV;                           // PRODUCTIVITY
+            case 8: return EL_SYS;                           // ACCESSIBILITY
+        }
+        if ((ai.flags & android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
+                && (ai.flags & android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) == 0) return EL_SYS;
+        try {
+            Drawable d = info.getIcon(dpi);
+            Bitmap b = Bitmap.createBitmap(48, 48, Bitmap.Config.ARGB_8888);
+            d.setBounds(0, 0, 48, 48); d.draw(new Canvas(b));
+            int[] px = new int[48 * 48]; b.getPixels(px, 0, 48, 0, 0, 48, 48); b.recycle();
+            float[] bins = new float[36], hsv = new float[3];
+            for (int p : px) {
+                float a = (p >>> 24) / 255f;
+                if (a < 0.5f) continue;
+                Color.colorToHSV(p | 0xFF000000, hsv);
+                bins[((int) (hsv[0] / 10)) % 36] += hsv[1] * hsv[2] * a;
+            }
+            int bb = 0;
+            for (int k = 1; k < 36; k++) if (bins[k] > bins[bb]) bb = k;
+            if (bins[bb] < 20) return EL_SYS;                  // grey / white icon
+            float hue = bb * 10 + 5, best = 999; int col = EL_SYS;
+            for (int c : EL_PAL) {
+                Color.colorToHSV(c, hsv);
+                float dh = Math.abs(hsv[0] - hue); dh = Math.min(dh, 360 - dh);
+                if (dh < best) { best = dh; col = c; }
+            }
+            return col;
+        } catch (Throwable e) { return EL_SYS; }
+    }
+
+    Bitmap renderElement(String label, int col, int size, boolean work) {
+        Bitmap out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(out);
+        float m = size * 0.04f, a = m, b = size - m, k = (b - a) * 0.20f, bw = Math.max(1.5f, size * 0.026f);
+        android.graphics.Path outer = new android.graphics.Path();
+        outer.moveTo(a + k, a); outer.lineTo(b, a); outer.lineTo(b, b - k); outer.lineTo(b - k, b); outer.lineTo(a, b); outer.lineTo(a, a + k); outer.close();
+        float i0 = a + bw, i1 = b - bw, ki = k - bw * 0.41f;
+        android.graphics.Path inner = new android.graphics.Path();
+        inner.moveTo(i0 + ki, i0); inner.lineTo(i1, i0); inner.lineTo(i1, i1 - ki); inner.lineTo(i1 - ki, i1); inner.lineTo(i0, i1); inner.lineTo(i0, i0 + ki); inner.close();
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        p.setColor(col); c.drawPath(outer, p);
+        p.setColor(0xFF05070D); c.drawPath(inner, p);
+        p.setTypeface(mono); p.setColor(col);
+        String sym = elementSymbol(label);
+        p.setTextSize(size * 0.40f);
+        float tw = p.measureText(sym), tx = Math.max(i0 + size * 0.10f, (size - tw) / 2 - size * 0.04f);
+        c.drawText(sym, tx, size * 0.66f, p);
+        p.setTextSize(size * 0.13f); p.setColor(0xFF737AA2);
+        if (work) c.drawText("WRK", i0 + size * 0.08f, i1 - size * 0.08f, p);
+        else { c.drawRect(i0 + size * 0.08f, i1 - size * 0.13f, i0 + size * 0.30f, i1 - size * 0.10f, p); }
+        return out;
+    }
+
+    boolean iconSigFrame, iconSigElement; int iconSigTint = -1; String iconSigPack = null, iconSig = "";
     /** frame / colour / pack changes re-render every icon (and drop the disk cache of the old style) */
     void checkIconSig() {
         boolean f = sp.getBoolean("lnIconFrame", true);
         int t = sp.getInt("lnIconTint", 0);
         String pk = sp.getString("lnIconPack", "");
-        if (f != iconSigFrame || t != iconSigTint || !pk.equals(iconSigPack)) {
-            iconSigFrame = f; iconSigTint = t; iconSigPack = pk;
-            iconSig = "v1_" + (f ? "f" : "n") + t + "_" + Integer.toHexString(pk.hashCode()) + "_" + iconPx();
+        boolean el = sp.getBoolean("lnIconElement", false);
+        if (f != iconSigFrame || t != iconSigTint || el != iconSigElement || !pk.equals(iconSigPack)) {
+            iconSigFrame = f; iconSigTint = t; iconSigElement = el; iconSigPack = pk;
+            iconSig = "v2_" + (el ? "e" : f ? "f" : "n") + t + "_" + Integer.toHexString(pk.hashCode()) + "_" + iconPx();
             iconGen++; icons.evictAll(); iconPending.clear();
             final String keep = iconSig;
             iconExec.execute(new Runnable() { public void run() {
@@ -1469,32 +1611,165 @@ public class HudLauncher extends Activity {
         return n > 99 ? "99+" : String.valueOf(n);
     }
 
-    CharSequence rowLabel(App a) {
-        String base = a.label.toUpperCase(Locale.ROOT) + (a.work ? "  · WORK" : "") + (hidden(a) ? "  · HIDDEN" : "");
-        String b = badgeText(a);
-        if (b == null) return base;
-        android.text.SpannableString ss = new android.text.SpannableString(base + "  [" + b + "]");
-        ss.setSpan(new android.text.style.ForegroundColorSpan(CYAN), base.length(), ss.length(), 0);
-        return ss;
-    }
-
     StateListDrawable pressBg(boolean top) {
         StateListDrawable sl = new StateListDrawable();
-        sl.addState(new int[]{android.R.attr.state_pressed}, new android.graphics.drawable.ColorDrawable(0x337AA2F7));
-        if (top) { GradientDrawable g = new GradientDrawable(); g.setColor(0x147DCFFF); g.setStroke(px(1), CYAN); sl.addState(new int[0], g); }
+        sl.addState(new int[]{android.R.attr.state_pressed}, new android.graphics.drawable.ColorDrawable(0x33BB9AF7));
+        if (top) { GradientDrawable g = new GradientDrawable(); g.setColor(0x1ABB9AF7); g.setStroke(px(1), ACCENT); sl.addState(new int[0], g); }
         return sl;
     }
 
-    static final int T_TEXT = 0, T_HEAD = 1, T_ICON = 2, T_GRID = 3, T_HIDDEN = 4, T_CMD = 5;
+    // ------------------------------------------------------------------ fzf look
+    static final Object COLS = new Object();                      // column header row of the text list
+    TextView prompt; LinearLayout scStrip, chips;
+    String lastQ = "";
+    int catSel;                                                   // 0 all, -1 frequent, else an element colour
+
+    void setPrompt(String cmd) {
+        String user = "tn@" + Build.MODEL.toLowerCase(Locale.ROOT).replace(' ', '-');
+        android.text.SpannableStringBuilder b = new android.text.SpannableStringBuilder();
+        span(b, user, ACCENT); span(b, ":", COMMENT); span(b, "/apps", BLUE); span(b, "$ ", COMMENT); span(b, cmd, FG);
+        prompt.setText(b);
+    }
+
+    static void span(android.text.SpannableStringBuilder b, String t, int col) {
+        int s0 = b.length(); b.append(t);
+        b.setSpan(new android.text.style.ForegroundColorSpan(col), s0, b.length(), 0);
+    }
+
+    /** concept's square chip; on = accent fill */
+    TextView chip(String label, int col, boolean on) {
+        TextView t = tv(label, 11, on ? 0xFF000000 : col);
+        t.setGravity(Gravity.CENTER);
+        t.setPadding(px(9), 0, px(9), 0);
+        GradientDrawable g = new GradientDrawable();
+        if (on) g.setColor(ACCENT); else { g.setColor(0); g.setStroke(px(1), LINE); }
+        t.setBackground(g);
+        if (on) t.setTypeface(mono, Typeface.BOLD);
+        return t;
+    }
+
+    /** element grid: ALL / DEV / COMMS / MEDIA / SYS / NAV / ★ FREQ; text styles: key hints */
+    void buildChips(boolean periodic) {
+        chips.removeAllViews();
+        if (!periodic) {
+            String[] hints = search.getText().length() > 0 ? new String[]{"\u21B5 open", "hold \u00B7 menu", "> command"}
+                    : new String[]{"> command", "hold \u00B7 menu", "A-Z rail \u2192"};
+            for (String hnt : hints) {
+                TextView t = tv(hnt, 10, COMMENT);
+                t.setPadding(px(6), px(2), px(6), px(2));
+                GradientDrawable g = new GradientDrawable(); g.setColor(0); g.setStroke(px(1), LINE); t.setBackground(g);
+                LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                l.rightMargin = px(6);
+                chips.addView(t, l);
+            }
+            return;
+        }
+        String[] lb = {"ALL", "DEV", "COMMS", "MEDIA", "SYS", "NAV", "GAME", "\u2605 FREQ"};
+        final int[] key = {0, EL_DEV, EL_COMMS, EL_MEDIA, EL_SYS, EL_NAV, EL_GAME, -1};
+        int[] col = {FG, EL_DEV, EL_COMMS, EL_MEDIA, EL_SYS, EL_NAV, EL_GAME, YELLOW};
+        for (int i = 0; i < lb.length; i++) {
+            final int k = key[i];
+            TextView t = chip(lb[i], col[i], catSel == k);
+            t.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { catSel = k; hideKeyboard(); filter(); } });
+            LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, px(32));
+            l.rightMargin = px(6);
+            chips.addView(t, l);
+        }
+    }
+
+    /** "› shortcuts: WhatsApp" + up to 3 numbered shortcuts of the top match */
+    void showShortcuts(final App a) {
+        scStrip.removeAllViews();
+        List<Object[]> L = a == null || a.work ? null : shortcuts(a);
+        if (L == null || L.isEmpty()) { scStrip.setVisibility(View.GONE); return; }
+        scStrip.setVisibility(View.VISIBLE);
+        scStrip.addView(tv("\u203A shortcuts: " + a.label, 11, ACCENT));
+        LinearLayout r = new LinearLayout(this);
+        for (int i = 0; i < Math.min(3, L.size()); i++) {
+            final Object info = L.get(i)[1];
+            android.text.SpannableStringBuilder b = new android.text.SpannableStringBuilder();
+            span(b, (i + 1) + " ", COMMENT); span(b, (String) L.get(i)[0], FG);
+            TextView t = tv("", 12, FG);
+            t.setText(b);
+            t.setSingleLine(true); t.setEllipsize(TextUtils.TruncateAt.END);
+            t.setPadding(0, px(8), px(14), px(8));
+            t.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { startShortcut(info); } });
+            r.addView(t, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        }
+        scStrip.addView(r);
+    }
+
+    /** label with the query's letters underlined in the accent (substring first, else letters in order) */
+    CharSequence nameSpan(App a, boolean top) {
+        String lab = a.label, nl = norm(lab);
+        android.text.SpannableStringBuilder b = new android.text.SpannableStringBuilder();
+        if (top) span(b, "\u25B6 ", ACCENT);
+        int s0 = b.length();
+        b.append(lab);
+        b.setSpan(new android.text.style.ForegroundColorSpan(top ? ACCENT : hidden(a) ? COMMENT : FG), s0, b.length(), 0);
+        String q = lastQ;
+        if (q.length() > 0 && nl.length() == lab.length()) {
+            int at = nl.indexOf(q);
+            boolean[] hit = new boolean[lab.length()];
+            if (at >= 0) for (int i = at; i < at + q.length(); i++) hit[i] = true;
+            else { int k = 0; for (int i = 0; i < nl.length() && k < q.length(); i++) if (nl.charAt(i) == q.charAt(k)) { hit[i] = true; k++; } if (k < q.length()) hit = new boolean[lab.length()]; }
+            for (int i = 0; i < hit.length; i++) if (hit[i]) {
+                b.setSpan(new android.text.style.UnderlineSpan(), s0 + i, s0 + i + 1, 0);
+                b.setSpan(new android.text.style.ForegroundColorSpan(top ? ACCENT : FG), s0 + i, s0 + i + 1, 0);
+                b.setSpan(new android.text.style.StyleSpan(Typeface.BOLD), s0 + i, s0 + i + 1, 0);
+            }
+        }
+        if (a.work) span(b, "  (work)", COMMENT);
+        if (hidden(a)) span(b, "  HIDDEN", COMMENT);
+        String bd = badgeText(a);
+        if (bd != null) {
+            b.append("  ");
+            int b0 = b.length(); b.append(" " + bd + " ");
+            b.setSpan(new android.text.style.BackgroundColorSpan(ACCENT), b0, b.length(), 0);
+            b.setSpan(new android.text.style.ForegroundColorSpan(0xFF000000), b0, b.length(), 0);
+            b.setSpan(new android.text.style.RelativeSizeSpan(0.75f), b0, b.length(), 0);
+        }
+        return b;
+    }
+
+    static String age(long last) {
+        if (last == 0) return "\u2014";
+        long m = Math.max(0, System.currentTimeMillis() - last) / 60000;
+        return m < 60 ? m + "m" : m < 1440 ? (m / 60) + "h" : m < 14 * 1440 ? (m / 1440) + "d" : (m / 10080) + "w";
+    }
+
+    /** selected-row look: faint accent fill with a 2 dp accent bar on the left */
+    Drawable topBg() {
+        android.graphics.drawable.LayerDrawable ld = new android.graphics.drawable.LayerDrawable(new Drawable[]{
+                new android.graphics.drawable.ColorDrawable(0x1ABB9AF7), new android.graphics.drawable.ColorDrawable(ACCENT)});
+        ld.setLayerGravity(1, Gravity.START | Gravity.FILL_VERTICAL);
+        ld.setLayerWidth(1, px(2));
+        return ld;
+    }
+
+    LinearLayout fzfRow() {
+        LinearLayout r = new LinearLayout(this);
+        r.setGravity(Gravity.CENTER_VERTICAL);
+        r.setMinimumHeight(px(48));
+        r.setPadding(px(4), 0, px(8), 0);
+        int[] w = {44, 40, 40};
+        for (int k = 0; k < 3; k++) { TextView t = tv("", 13, COMMENT); t.setSingleLine(true); r.addView(t, new LinearLayout.LayoutParams(px(w[k]), ViewGroup.LayoutParams.WRAP_CONTENT)); }
+        TextView n = tv("", 16, FG); n.setSingleLine(true); n.setEllipsize(TextUtils.TruncateAt.END);
+        r.addView(n, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        return r;
+    }
+
+    static final int T_TEXT = 0, T_HEAD = 1, T_ICON = 2, T_GRID = 3, T_HIDDEN = 4, T_CMD = 5, T_COLS = 6;
 
     final class AppAdapter extends BaseAdapter {
         public int getCount() { return rows.size(); }
         public Object getItem(int i) { return rows.get(i); }
         public long getItemId(int i) { return i; }
-        public int getViewTypeCount() { return 6; }
+        public int getViewTypeCount() { return 7; }
         public int getItemViewType(int i) {
             Object o = rows.get(i);
             if (o == SHOW_HIDDEN) return T_HIDDEN;
+            if (o == COLS) return T_COLS;
             if (o instanceof Commands.Cmd) return T_CMD;
             if (o instanceof App) return style == ST_LIST ? T_ICON : T_TEXT;
             if (o instanceof App[]) return T_GRID;
@@ -1505,6 +1780,18 @@ public class HudLauncher extends Activity {
         public View getView(int i, View v, ViewGroup parent) {
             Object o = rows.get(i);
             boolean query = search.getText().length() > 0;
+            if (o == COLS) {
+                LinearLayout r = (LinearLayout) v;
+                if (r == null) {
+                    r = fzfRow(); r.setMinimumHeight(px(28));
+                    String[] h = {"FLAGS", "HITS", "AGE", "NAME"};
+                    for (int k = 0; k < 4; k++) { TextView t = (TextView) r.getChildAt(k); t.setText(h[k]); t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10); t.setTextColor(COMMENT); }
+                    GradientDrawable g = new GradientDrawable(); g.setColor(0); g.setStroke(px(1), LINE, px(4), px(3));
+                    android.graphics.drawable.InsetDrawable bottom = new android.graphics.drawable.InsetDrawable(g, -px(2), -px(2), -px(2), 0);
+                    r.setBackground(bottom);
+                }
+                return r;
+            }
             if (o instanceof Commands.Cmd) {
                 TextView t = (TextView) v;
                 if (t == null) { t = tv("", 18, FG); t.setMinHeight(px(52)); t.setGravity(Gravity.CENTER_VERTICAL); t.setPadding(px(4), 0, px(8), 0); t.setSingleLine(true); t.setEllipsize(TextUtils.TruncateAt.END); }
@@ -1535,25 +1822,32 @@ public class HudLauncher extends Activity {
                     r.addView(t, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
                 }
                 bindIcon((ImageView) r.getChildAt(0), a);
-                TextView t = (TextView) r.getChildAt(1);
-                t.setText(rowLabel(a));
-                t.setTextColor(query && i == firstApp() ? CYAN : FG);
+                boolean top = query && i == firstApp();
+                ((TextView) r.getChildAt(1)).setText(nameSpan(a, top));
+                r.setBackground(top ? topBg() : null);
                 return r;
             }
-            if (o instanceof App) {
+            if (o instanceof App) {                                  // fzf table row: FLAGS HITS AGE NAME
                 App a = (App) o;
-                TextView t = (TextView) v;
-                if (t == null) { t = tv("", 19, FG); t.setMinHeight(px(52)); t.setGravity(Gravity.CENTER_VERTICAL); t.setPadding(px(4), 0, px(8), 0); }
-                t.setText(rowLabel(a));
-                t.setTextColor(query && i == firstApp() ? CYAN : FG);
-                return t;
+                LinearLayout r = (LinearLayout) v;
+                if (r == null) r = fzfRow();
+                boolean top = query && i == firstApp(), hd = hidden(a);
+                String fl = (badgeText(a) != null ? "n" : "-") + (a.work ? "w" : "-") + (hd ? "h" : "-");
+                TextView f0 = (TextView) r.getChildAt(0), f1 = (TextView) r.getChildAt(1), f2 = (TextView) r.getChildAt(2);
+                f0.setText(fl); f0.setTextColor(hd ? COMMENT : fl.equals("---") ? COMMENT : a.work ? ACCENT : GREEN);
+                f1.setText(a.launches > 999 ? "999+" : String.valueOf(a.launches)); f1.setTextColor(hd ? COMMENT : YELLOW);
+                f2.setText(age(a.last)); f2.setTextColor(COMMENT);
+                ((TextView) r.getChildAt(3)).setText(nameSpan(a, top));
+                r.setBackground(top ? topBg() : null);
+                r.setContentDescription(a.label);
+                return r;
             }
             if (o instanceof App[]) return gridRow((App[]) o, (LinearLayout) v, query && i == firstApp());
             TextView t = (TextView) v;
             if (t == null) { t = tv("", 13, COMMENT); t.setPadding(px(4), px(14), 0, px(4)); }
             t.setText((String) o);
             String hs = (String) o;
-            t.setTextColor(hs.startsWith("NO MATCH") || hs.startsWith("UNKNOWN") ? COMMENT : BLUE);
+            t.setTextColor(hs.startsWith("NO MATCH") || hs.startsWith("UNKNOWN") || hs.startsWith("NOTHING") ? COMMENT : ACCENT);
             return t;
         }
     }
@@ -1576,7 +1870,7 @@ public class HudLauncher extends Activity {
                 int is = cols >= 6 ? 44 : cols == 5 ? 48 : 52;
                 box.addView(iv, new FrameLayout.LayoutParams(px(is), px(is), Gravity.CENTER));
                 TextView bd = tv("", 10, 0xFF000000);
-                GradientDrawable bg = new GradientDrawable(); bg.setColor(CYAN); bg.setCornerRadius(px(2));
+                GradientDrawable bg = new GradientDrawable(); bg.setColor(ACCENT); bg.setCornerRadius(0);
                 bd.setBackground(bg);
                 bd.setPadding(px(4), 0, px(4), 0);
                 bd.setGravity(Gravity.CENTER);
@@ -1606,7 +1900,7 @@ public class HudLauncher extends Activity {
             bindIcon(iv, a);
             String b = badgeText(a);
             bd.setText(b == null ? "" : b); bd.setVisibility(b == null ? View.GONE : View.VISIBLE);
-            t.setText(a.label.toUpperCase(Locale.ROOT));
+            t.setText(a.label);
             t.setTextColor(a.work ? BLUE : hidden(a) ? COMMENT : FG);
             iv.setAlpha(hidden(a) ? 0.45f : 1f);
             cell.setBackground(pressBg(firstIsTop && k == 0));

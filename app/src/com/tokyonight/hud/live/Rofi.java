@@ -83,7 +83,7 @@ final class Rofi {
         LinearLayout prompt = new LinearLayout(l);
         prompt.setGravity(Gravity.CENTER_VERTICAL);
         prompt.setPadding(g.px(18), g.px(4), g.px(18), g.px(6));
-        TextView ps = g.text("❯", 18, g.accent);
+        TextView ps = g.text("❯", 18, g.ok);
         ps.setPadding(0, 0, g.px(10), 0);
         prompt.addView(ps);
         in = new EditText(l);
@@ -106,7 +106,7 @@ final class Rofi {
         res.setPadding(g.px(8), 0, g.px(8), 0);
         box.addView(res);
 
-        d = g.sheet(null, box, null, null);
+        d = g.sheet("cmd://palette", box, null, null);
         if (d.getWindow() != null) {
             WindowManager.LayoutParams lp = d.getWindow().getAttributes();
             lp.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;   // high on the screen, clear of the keyboard
@@ -253,8 +253,7 @@ final class Rofi {
             t.setSingleLine(true); t.setEllipsize(TextUtils.TruncateAt.END);
             t.setPadding(g.px(14), g.px(11), g.px(14), g.px(11));
             t.setMinHeight(g.px(44)); t.setGravity(Gravity.CENTER_VERTICAL);
-            t.setBackground(g.pressBg(g.px(10)));
-            if (i == 0) { android.graphics.drawable.GradientDrawable hl = new android.graphics.drawable.GradientDrawable(); hl.setColor(g.press); hl.setCornerRadius(g.px(10)); t.setBackground(hl); }
+            t.setBackground(i == 0 ? g.selBg() : g.pressBg(0));
             t.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { pick(o); } });
             res.addView(t, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         }
