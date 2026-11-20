@@ -20,7 +20,11 @@ import android.widget.FrameLayout;
  * on a downward drag from it, shows the HUD panel (Shade) as a full-screen overlay. The rest of the top edge still
  * opens Android's own shade. The service reads no screen content and reacts to no accessibility events.
  *
- * Prefs: shOn (strip on), shEdge (0 left half, 1 full width, 2 right half).
+ * Prefs: shOn (strip on), shEdge (0 left half, 1 full width, 2 right half), shShow (tint the strip to see where it is).
+ *
+ * Since Android 11 an overlay window is laid out below the status bar unless it opts out of fitting the system
+ * bars, and the camera cutout is excluded unless asked for; coverBars() does both, or the strip would sit just under
+ * the status bar while Android's own shade kept the real top edge.
  */
 public class ShadeService extends AccessibilityService {
     static final int TYPE_OVERLAY = 2032;                         // WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
@@ -36,7 +40,7 @@ public class ShadeService extends AccessibilityService {
 
     final Link.Listener linkL = new Link.Listener() { public void onLink() { if (shade != null) shade.fill(); } };
     final SharedPreferences.OnSharedPreferenceChangeListener prefL = new SharedPreferences.OnSharedPreferenceChangeListener() {
-        public void onSharedPreferenceChanged(SharedPreferences s, String k) { if ("shOn".equals(k) || "shEdge".equals(k)) addStrip(); }
+        public void onSharedPreferenceChanged(SharedPreferences s, String k) { if ("shOn".equals(k) || "shEdge".equals(k) || "shShow".equals(k)) addStrip(); }
     };
 
     @Override protected void onServiceConnected() {
@@ -75,6 +79,7 @@ public class ShadeService extends AccessibilityService {
         if (!sp.getBoolean("shOn", true)) return;
         int edge = sp.getInt("shEdge", 0);
         strip = new View(this);
+        if (sp.getBoolean("shShow", false)) strip.setBackgroundColor(0x667DCFFF);
         strip.setOnTouchListener(new View.OnTouchListener() {
             float y0; boolean fired;
             public boolean onTouch(View v, MotionEvent e) {
@@ -89,7 +94,18 @@ public class ShadeService extends AccessibilityService {
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
                 PixelFormat.TRANSLUCENT);
         lp.gravity = Gravity.TOP | (edge == 2 ? Gravity.END : Gravity.START);
+        coverBars(lp);
         try { wm.addView(strip, lp); } catch (Throwable t) { strip = null; }
+    }
+
+    /** lay the window out over the status bar and the camera cutout (API 28 / 30 fields, reached by reflection) */
+    static void coverBars(WindowManager.LayoutParams lp) {
+        try { WindowManager.LayoutParams.class.getMethod("setFitInsetsTypes", int.class).invoke(lp, 0); } catch (Throwable ignored) { }
+        try { WindowManager.LayoutParams.class.getMethod("setFitInsetsIgnoringVisibility", boolean.class).invoke(lp, true); } catch (Throwable ignored) { }
+        try {
+            int mode = android.os.Build.VERSION.SDK_INT >= 30 ? 3 : 1;   // LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS / SHORT_EDGES
+            WindowManager.LayoutParams.class.getField("layoutInDisplayCutoutMode").setInt(lp, mode);
+        } catch (Throwable ignored) { }
     }
 
     boolean isOpen() { return win != null; }
@@ -108,6 +124,7 @@ public class ShadeService extends AccessibilityService {
         WindowManager.LayoutParams lp = new WindowManager.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, TYPE_OVERLAY,
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS, PixelFormat.TRANSLUCENT);
         lp.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE;
+        coverBars(lp);
         if (Glass.blurAvailable(this)) {
             try {
                 lp.flags |= 0x4;                                      // FLAG_BLUR_BEHIND: frost the app underneath

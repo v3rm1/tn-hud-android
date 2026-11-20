@@ -344,6 +344,7 @@ public class SetWallpaper extends Activity {
         csh.addView(rsh);
         csh.addView(switchItem("Pull-down strip", "Drag down from the top edge of any app. Needs \u201cTN-HUD pull-down\u201d switched on in accessibility settings; it reads no screen content.", "shOn", true, null));
         csh.addView(chipItem("Pull-down area", "The rest of the top edge still opens Android's own shade.", "shEdge", 0, new int[]{0, 1, 2}, new String[]{"Left half", "Whole top", "Right half"}));
+        csh.addView(switchItem("Show the pull-down area", "Tints the strip cyan, to check where it sits.", "shShow", false, null));
         divider(csh);
         final TextView wsState = text("", 14, onSurfaceVar, false);
         wsState.setPadding(0, px(8), 0, px(4));
