@@ -4,7 +4,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 
-/** commands from TN-HUD Live (signature permission): media, dismiss, clear, dnd, refresh */
+/** commands from TN-HUD Live (signature permission): media, dismiss, clear, dnd, reply, refresh */
 public class LinkCmdRx extends BroadcastReceiver {
     @Override public void onReceive(Context c, Intent i) {
         LinkListener l = LinkListener.instance;
@@ -19,6 +19,7 @@ public class LinkCmdRx extends BroadcastReceiver {
         else if ("dismiss".equals(cmd)) l.dismiss(i.getStringExtra("key"));
         else if ("clear".equals(cmd)) l.dismiss(null);
         else if ("dnd".equals(cmd)) l.dnd(i.getIntExtra("mode", 1));
+        else if ("reply".equals(cmd)) l.reply(i.getStringExtra("key"), i.getStringExtra("text"));
         else l.schedule();
     }
 }

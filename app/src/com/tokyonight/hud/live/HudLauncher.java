@@ -98,8 +98,7 @@ public class HudLauncher extends Activity {
     final ArrayList<App> apps = new ArrayList<App>();
     final ArrayList<Object> rows = new ArrayList<Object>();       // String = section header, App = row
     static final Object SHOW_HIDDEN = new Object();
-    boolean showHidden, resumed, torchOn;
-    String torchId;
+    boolean showHidden, resumed;
 
     // ------------------------------------------------------------------ lifecycle
     @Override protected void onCreate(Bundle b) {
@@ -121,11 +120,12 @@ public class HudLauncher extends Activity {
         loadApps();
         host = new android.appwidget.AppWidgetHost(this, 4711);
         awm = android.appwidget.AppWidgetManager.getInstance(this);
+        handleOpen(getIntent());
     }
 
     final Link.Listener linkL = new Link.Listener() { public void onLink() {
         if (drawer.getVisibility() == View.VISIBLE) adapter.notifyDataSetChanged();
-        if (panel != null && panel.getVisibility() == View.VISIBLE) fillPanel();
+        if (panelOpen()) shade.fill();
     } };
 
     @Override protected void onStart() {
@@ -143,59 +143,15 @@ public class HudLauncher extends Activity {
         super.onStop();
     }
 
-    // ------------------------------------------------------------------ HUD notification panel (needs TN-HUD Link)
-    LinearLayout panel, toggles;
-    LinearLayout notes;
-    TextView pCount;
+    // ------------------------------------------------------------------ HUD notification panel (Shade; needs TN-HUD Link)
+    Shade shade;
 
-    void buildPanel() {
-        panel = new LinearLayout(this);
-        panel.setOrientation(LinearLayout.VERTICAL);
-        panelBlur = Glass.blurAvailable(this);
-        panel.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, panelBlur
-                ? new int[]{0xB81A1B26, 0x9E1A1B26, 0xC416161E}          // translucent: the blurred HUD shows through
-                : new int[]{0xF21A1B26, 0xEB1A1B26, 0xF516161E}));
-        panel.setFitsSystemWindows(true);
-        panel.setPadding(px(20), px(12), px(20), 0);
-        LinearLayout top = new LinearLayout(this);
-        top.setGravity(Gravity.CENTER_VERTICAL);
-        top.addView(tv("// NOTIFICATIONS", 14, BLUE));
-        pCount = tv("", 14, COMMENT);
-        top.addView(pCount, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView clear = tv("CLEAR ALL", 14, BLUE); clear.setPadding(px(10), px(10), px(10), px(10));
-        clear.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { Link.send(HudLauncher.this, "clear", null, 0); } });
-        top.addView(clear);
-        TextView sys = tv("SYSTEM ▾", 14, COMMENT); sys.setPadding(px(10), px(10), 0, px(10));
-        sys.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { closePanel(); statusBar(false); } });
-        top.addView(sys);
-        panel.addView(top);
-        toggles = new LinearLayout(this);
-        toggles.setOrientation(LinearLayout.HORIZONTAL);
-        panel.addView(toggles, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(52)));
-        android.widget.ScrollView sv = new android.widget.ScrollView(this);
-        notes = new LinearLayout(this);
-        notes.setOrientation(LinearLayout.VERTICAL);
-        sv.addView(notes);
-        sv.setOnTouchListener(new View.OnTouchListener() {         // swipe up from the end of the list closes the panel
-            float y0;
-            public boolean onTouch(View v, MotionEvent e) {
-                android.widget.ScrollView s = (android.widget.ScrollView) v;
-                boolean atEnd = s.getChildCount() == 0 || s.getScrollY() + s.getHeight() >= s.getChildAt(0).getHeight() - 2;
-                if (e.getActionMasked() == MotionEvent.ACTION_DOWN) y0 = e.getRawY();
-                else if (e.getActionMasked() == MotionEvent.ACTION_UP && atEnd && y0 - e.getRawY() > 140 * dp) { closePanel(); return true; }
-                return false;
-            }
-        });
-        panel.addView(sv, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-        panel.setVisibility(View.GONE);
-        root.addView(panel, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-    }
+    boolean panelOpen() { return shade != null && shade.view.getVisibility() == View.VISIBLE; }
 
-    boolean panelBlur;
 
     /** frosts the HUD wallpaper behind the launcher window while the panel is open (Android 12+, blur enabled) */
     void windowBlur(boolean on) {
-        if (!panelBlur || Build.VERSION.SDK_INT < 31) return;
+        if (!Glass.blurAvailable(this) || Build.VERSION.SDK_INT < 31) return;
         try {
             android.view.Window w = getWindow();
             if (on) w.addFlags(0x4 /* FLAG_BLUR_BEHIND */); else w.clearFlags(0x4);
@@ -205,20 +161,15 @@ public class HudLauncher extends Activity {
         } catch (Throwable ignored) { }
     }
 
-    /** glass card: translucent storm fill, faint light rim, brighter while pressed */
-    Drawable glassCard(float radius) {
-        GradientDrawable n = new GradientDrawable(); n.setColor(0x6624283B); n.setCornerRadius(radius); n.setStroke(px(1), 0x29C0CAF5);
-        GradientDrawable p = new GradientDrawable(); p.setColor(0x4D7AA2F7); p.setCornerRadius(radius); p.setStroke(px(1), 0x667AA2F7);
-        StateListDrawable sl = new StateListDrawable();
-        sl.addState(new int[]{android.R.attr.state_pressed}, p);
-        sl.addState(new int[0], n);
-        return sl;
-    }
-
     void openPanel() {
-        if (panel == null) buildPanel();
+        if (shade == null) {
+            shade = new Shade(this, new Shade.Host() { public void closeShade() { closePanel(); } }, mono, false);
+            shade.view.setVisibility(View.GONE);
+            root.addView(shade.view, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        }
         if (Link.installed(this)) Link.send(this, "refresh", null, 0);
-        fillPanel();
+        shade.fill();
+        View panel = shade.view;
         panel.setAlpha(0f); panel.setTranslationY(-80 * dp);
         panel.setVisibility(View.VISIBLE);
         panel.animate().alpha(1f).translationY(0).setDuration(160).start();
@@ -228,94 +179,14 @@ public class HudLauncher extends Activity {
     }
 
     void closePanel() {
+        if (!panelOpen()) return;
+        final View panel = shade.view;
+        shade.hideKeyboard(panel);
         panel.animate().alpha(0f).translationY(-60 * dp).setDuration(120).withEndAction(new Runnable() {
             public void run() { panel.setVisibility(View.GONE); placeWidget(lastRect); }
         }).start();
         windowBlur(false);
         command("tnhud.drawer", 0, 0, 0);
-    }
-
-    TextView chip(String label, boolean on, View.OnClickListener l) {
-        TextView t = tv(label, 13, on ? 0xFF1A1B26 : FG);
-        t.setGravity(Gravity.CENTER);
-        if (on) { GradientDrawable g = new GradientDrawable(); g.setColor(0xE67DCFFF); g.setCornerRadius(px(10)); t.setBackground(g); }
-        else t.setBackground(glassCard(px(10)));
-        t.setOnClickListener(l);
-        return t;
-    }
-
-    void addToggle(TextView t) {
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, px(40), 1f);
-        lp.rightMargin = px(6); lp.topMargin = px(6);
-        toggles.addView(t, lp);
-    }
-
-    void fillPanel() {
-        toggles.removeAllViews();
-        addToggle(chip("TORCH", torchOn, new View.OnClickListener() { public void onClick(View v) { torch(); h.postDelayed(new Runnable() { public void run() { fillPanel(); } }, 250); } }));
-        final boolean dndOn = Link.live() && Link.dnd > 1;
-        addToggle(chip("DND", dndOn, new View.OnClickListener() { public void onClick(View v) {
-            if (Link.live()) Link.send(HudLauncher.this, "dnd", null, dndOn ? 1 : 2);
-            else openSettings();
-        } }));
-        addToggle(chip("WI-FI", false, panelIntent("android.settings.panel.action.WIFI")));
-        addToggle(chip("NET", false, panelIntent("android.settings.panel.action.INTERNET_CONNECTIVITY")));
-        addToggle(chip("BT", false, panelIntent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS)));
-        addToggle(chip("VOL", false, panelIntent("android.settings.panel.action.VOLUME")));
-        notes.removeAllViews();
-        if (!Link.installed(this) || !Link.live()) {
-            pCount.setText("");
-            TextView m = tv(!Link.installed(this) ? "INSTALL TN-HUD LINK TO SEE NOTIFICATIONS HERE.\n\nIT HOLDS NOTIFICATION ACCESS SO THIS APP DOESN'T HAVE TO. SEE HUD SETTINGS › PERMISSIONS."
-                    : "TN-HUD LINK IS INSTALLED BUT HAS NO NOTIFICATION ACCESS (OR HASN'T REPORTED YET).", 15, COMMENT);
-            m.setPadding(px(4), px(24), px(4), px(12));
-            notes.addView(m);
-            TextView open = tv("› OPEN HUD SETTINGS", 15, BLUE);
-            open.setPadding(px(4), px(8), px(4), px(8));
-            open.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { closePanel(); openSettings(); } });
-            notes.addView(open);
-            return;
-        }
-        int n = Link.nKey.length;
-        pCount.setText("  · " + n);
-        if (n == 0) { TextView m = tv("ALL CLEAR", 16, COMMENT); m.setPadding(px(4), px(24), 0, 0); notes.addView(m); }
-        long now = System.currentTimeMillis();
-        for (int k = 0; k < n; k++) {
-            final int i = k;
-            LinearLayout row = new LinearLayout(this);
-            row.setOrientation(LinearLayout.VERTICAL);
-            row.setPadding(px(14), px(12), px(14), px(12));
-            row.setBackground(glassCard(px(14)));
-            long ago = Math.max(0, now - (i < Link.nWhen.length ? Link.nWhen[i] : now)) / 60000;
-            String when = ago < 1 ? "NOW" : ago < 60 ? ago + "M" : ago < 1440 ? (ago / 60) + "H" : (ago / 1440) + "D";
-            row.addView(tv(Link.nApp[i].toUpperCase(Locale.ROOT) + "  ·  " + when, 12, COMMENT));
-            if (Link.nTitle[i].length() > 0) row.addView(tv(Link.nTitle[i], 16, FG));
-            if (Link.nText[i].length() > 0) { TextView tx = tv(Link.nText[i], 14, 0xFFA9B1D6); tx.setMaxLines(3); tx.setEllipsize(android.text.TextUtils.TruncateAt.END); row.addView(tx); }
-            row.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
-                PendingIntent pi = i < Link.nIntent.length ? Link.nIntent[i] : null;
-                try {
-                    if (pi != null) pi.send();
-                    else startActivity(getPackageManager().getLaunchIntentForPackage(Link.nPkg[i]));
-                    if (i < Link.nClear.length && Link.nClear[i]) Link.send(HudLauncher.this, "dismiss", Link.nKey[i], 0);
-                    closePanel();
-                } catch (Throwable ignored) { }
-            } });
-            row.setOnLongClickListener(new View.OnLongClickListener() { public boolean onLongClick(View v) {
-                if (i < Link.nClear.length && Link.nClear[i]) { v.performHapticFeedback(0); v.animate().alpha(0f).translationX(v.getWidth()).setDuration(160).start(); Link.send(HudLauncher.this, "dismiss", Link.nKey[i], 0); }
-                return true;
-            } });
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            lp.topMargin = px(8);
-            notes.addView(row, lp);
-        }
-        TextView hint = tv("TAP OPENS · LONG-PRESS DISMISSES · SWIPE UP AT THE END CLOSES", 11, COMMENT);
-        hint.setPadding(px(4), px(14), 0, px(24));
-        notes.addView(hint);
-    }
-
-    View.OnClickListener panelIntent(final String action) {
-        return new View.OnClickListener() { public void onClick(View v) {
-            try { startActivity(new Intent(action)); } catch (Exception e) { statusBar(true); }
-        } };
     }
 
     // ------------------------------------------------------------------ hosted widget (stage 3)
@@ -428,13 +299,26 @@ public class HudLauncher extends Activity {
 
     @Override protected void onNewIntent(Intent i) {          // home pressed while we are in front
         super.onNewIntent(i);
-        if (panel != null && panel.getVisibility() == View.VISIBLE) closePanel();
+        if (handleOpen(i)) return;
+        if (panelOpen()) closePanel();
         else if (drawer.getVisibility() == View.VISIBLE) closeDrawer();
         else if (resumed && hasWindowFocus() && (i.getFlags() & Intent.FLAG_ACTIVITY_BROUGHT_TO_FRONT) == 0) run(Gestures.HOME_PRESS);   // already home
     }
 
+    /** quick settings tiles and the shade start the launcher with "tnhud.open": panel / popup */
+    boolean handleOpen(Intent i) {
+        final String what = i == null ? null : i.getStringExtra("tnhud.open");
+        if (what == null) return false;
+        i.removeExtra("tnhud.open");
+        h.postDelayed(new Runnable() { public void run() {
+            if ("panel".equals(what)) { if (drawer.getVisibility() == View.VISIBLE) closeDrawer(); openPanel(); }
+            else if ("popup".equals(what)) new Rofi(HudLauncher.this, "").show();
+        } }, 200);
+        return true;
+    }
+
     @Override public void onBackPressed() {
-        if (panel != null && panel.getVisibility() == View.VISIBLE) closePanel();
+        if (panelOpen()) closePanel();
         else if (drawer.getVisibility() == View.VISIBLE) closeDrawer();
     }
 
@@ -585,29 +469,15 @@ public class HudLauncher extends Activity {
         h.postDelayed(new Runnable() { public void run() { if (drawer.getVisibility() == View.VISIBLE) { drawer.setVisibility(View.GONE); hideKeyboard(); command("tnhud.drawer", 0, 0, 0); } } }, 300);
     }
 
-    void statusBar(boolean qs) {
-        try {
-            Object sbm = getSystemService("statusbar");
-            Class.forName("android.app.StatusBarManager").getMethod(qs ? "expandSettingsPanel" : "expandNotificationsPanel").invoke(sbm);
-        } catch (Throwable t) { /* hidden API refused: the normal swipe from the status bar still works */ }
-    }
+    void statusBar(boolean qs) { Shade.statusBar(this, qs); }
 
-    /** torch via CameraManager (no permission needed); state tracked with a TorchCallback */
-    void torch() {
-        try {
-            android.hardware.camera2.CameraManager cm = (android.hardware.camera2.CameraManager) getSystemService(Context.CAMERA_SERVICE);
-            if (torchId == null) {
-                for (String id : cm.getCameraIdList()) {
-                    Boolean f = cm.getCameraCharacteristics(id).get(android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE);
-                    if (f != null && f) { torchId = id; break; }
-                }
-                if (torchId == null) return;
-                cm.registerTorchCallback(new android.hardware.camera2.CameraManager.TorchCallback() {
-                    @Override public void onTorchModeChanged(String id, boolean on) { if (id.equals(torchId)) torchOn = on; }
-                }, h);
-            }
-            cm.setTorchMode(torchId, !torchOn);
-        } catch (Throwable ignored) { }
+    /** torch via CameraManager, state shared with the panel (Toggles) */
+    void torch() { Toggles.torch(this); }
+
+    View.OnClickListener panelIntent(final String action) {
+        return new View.OnClickListener() { public void onClick(View v) {
+            try { startActivity(new Intent(action)); } catch (Exception e) { statusBar(true); }
+        } };
     }
 
     Glass glass() { return new Glass(this, true, mono); }
@@ -769,10 +639,10 @@ public class HudLauncher extends Activity {
 
     // ------------------------------------------------------------------ apps
     final LauncherApps.Callback appsChanged = new LauncherApps.Callback() {
-        public void onPackageRemoved(String p, UserHandle u) { loadApps(); }
-        public void onPackageAdded(String p, UserHandle u) { loadApps(); }
-        public void onPackageChanged(String p, UserHandle u) { loadApps(); }
-        public void onPackagesAvailable(String[] p, UserHandle u, boolean r) { loadApps(); }
+        public void onPackageRemoved(String p, UserHandle u) { dropDisk(p); loadApps(); }
+        public void onPackageAdded(String p, UserHandle u) { dropDisk(p); loadApps(); }
+        public void onPackageChanged(String p, UserHandle u) { dropDisk(p); loadApps(); }
+        public void onPackagesAvailable(String[] p, UserHandle u, boolean r) { for (String x : p) dropDisk(x); loadApps(); }
         public void onPackagesUnavailable(String[] p, UserHandle u, boolean r) { loadApps(); }
     };
 
@@ -808,12 +678,40 @@ public class HudLauncher extends Activity {
         return java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD).replaceAll("\\p{M}", "").toLowerCase(Locale.ROOT);
     }
 
-    /** match score: 3 prefix, 2 word prefix, 1 substring, 0 none */
+    /**
+     * match score: 4 prefix, 3 word prefix, 2 substring or initials ("gm" = Google Maps), 1 loose (letters in order,
+     * or one typo in a word start, for queries of 3+ letters), 0 none
+     */
     static int score(String label, String q) {
+        if (q.isEmpty()) return 0;
         String l = norm(label);
-        if (l.startsWith(q)) return 3;
-        for (String w : l.split("[\\s\\-_.:]+")) if (w.startsWith(q)) return 2;
-        return l.contains(q) ? 1 : 0;
+        if (l.startsWith(q)) return 4;
+        String[] words = l.split("[\\s\\-_.:]+");
+        for (String w : words) if (w.startsWith(q)) return 3;
+        if (l.contains(q)) return 2;
+        if (q.length() >= 2 && words.length >= q.length()) {
+            StringBuilder ini = new StringBuilder();
+            for (String w : words) if (!w.isEmpty()) ini.append(w.charAt(0));
+            if (ini.toString().startsWith(q)) return 2;
+        }
+        if (q.length() < 3) return 0;
+        int k = 0;
+        for (int i = 0; i < l.length() && k < q.length(); i++) if (l.charAt(i) == q.charAt(k)) k++;
+        if (k == q.length() && l.length() <= q.length() * 3) return 1;
+        if (q.length() >= 4) for (String w : words) if (w.length() >= q.length() - 1 && oneTypo(w.substring(0, Math.min(w.length(), q.length())), q)) return 1;
+        return 0;
+    }
+
+    /** edit distance <= 1 (one substitution, insertion or deletion) */
+    static boolean oneTypo(String a, String b) {
+        if (Math.abs(a.length() - b.length()) > 1) return false;
+        int i = 0, j = 0, d = 0;
+        while (i < a.length() && j < b.length()) {
+            if (a.charAt(i) == b.charAt(j)) { i++; j++; continue; }
+            if (++d > 1) return false;
+            if (a.length() > b.length()) i++; else if (b.length() > a.length()) j++; else { i++; j++; }
+        }
+        return d + (a.length() - i) + (b.length() - j) <= 1;
     }
 
     void filter() {
@@ -984,7 +882,7 @@ public class HudLauncher extends Activity {
 
     // ---- call / sms by contact name (READ_CONTACTS, asked the first time a name is used)
     static final String P_CONTACTS = "android.permission.READ_CONTACTS";
-    static final int RC_CONTACTS = 43;
+    static final int RC_CONTACTS = 43, RC_TERMUX = 44;
     Commands.Cmd pendingCmd; String pendingArg;
     Rofi rofi;                                                   // open launcher pop-up, refreshed after a permission grant
 
@@ -1090,6 +988,7 @@ public class HudLauncher extends Activity {
     }
 
     @Override public void onRequestPermissionsResult(int rc, String[] p, int[] r) {
+        if (rc == RC_TERMUX) { if (rofi != null) rofi.refresh(); return; }
         if (rc != RC_CONTACTS) { super.onRequestPermissionsResult(rc, p, r); return; }
         Commands.Cmd c = pendingCmd; String a = pendingArg;
         pendingCmd = null; pendingArg = null;
@@ -1143,6 +1042,31 @@ public class HudLauncher extends Activity {
         }
     }
 
+    /** every app's shortcuts for the pop-up search: {label, ShortcutInfo, app label}; reflection as below */
+    List<Object[]> allShortcuts() {
+        List<Object[]> out = new ArrayList<Object[]>();
+        try {
+            if (!(Boolean) LauncherApps.class.getMethod("hasShortcutHostPermission").invoke(la)) return out;
+            Class<?> q = Class.forName("android.content.pm.LauncherApps$ShortcutQuery");
+            Object query = q.newInstance();
+            q.getMethod("setQueryFlags", int.class).invoke(query, 1 | 2 | 8);          // dynamic | pinned | manifest
+            List<?> L = (List<?>) LauncherApps.class.getMethod("getShortcuts", q, UserHandle.class).invoke(la, query, android.os.Process.myUserHandle());
+            if (L == null) return out;
+            Class<?> si = Class.forName("android.content.pm.ShortcutInfo");
+            java.util.HashMap<String, String> names = new java.util.HashMap<String, String>();
+            for (App a : apps) if (!a.work) names.put(a.cn.getPackageName(), a.label);
+            for (Object s : L) {
+                if (!(Boolean) si.getMethod("isEnabled").invoke(s)) continue;
+                CharSequence lb = (CharSequence) si.getMethod("getShortLabel").invoke(s);
+                String pkg = (String) si.getMethod("getPackage").invoke(s);
+                String an = names.get(pkg);
+                if (lb == null || an == null) continue;
+                out.add(new Object[]{lb.toString(), s, an});
+            }
+        } catch (Throwable ignored) { }
+        return out;
+    }
+
     /** app shortcuts (API 25+, default launcher only), reached by reflection: {label, ShortcutInfo} */
     List<Object[]> shortcuts(App a) {
         List<Object[]> out = new ArrayList<Object[]>();
@@ -1177,7 +1101,9 @@ public class HudLauncher extends Activity {
     void appMenu(final App a) {
         final boolean hid = hidden(a);
         final List<Object[]> sc = shortcuts(a);
-        String[] base = {"App info", "Rename", hid ? "Unhide" : "Hide from list", "Reset launch count", "Uninstall"};
+        final boolean orig = sp.getBoolean("lo_" + a.key, false);
+        String[] base = {"App info", "Rename", hid ? "Unhide" : "Hide from list", "Reset launch count", "Uninstall",
+                orig ? "Icon: use the drawer style" : "Icon: keep the original"};
         String[] items = new String[sc.size() + base.length];
         for (int i = 0; i < sc.size(); i++) items[i] = "\u203A " + sc.get(i)[0];
         System.arraycopy(base, 0, items, sc.size(), base.length);
@@ -1189,6 +1115,7 @@ public class HudLauncher extends Activity {
                 else if (w == 1) rename(a);
                 else if (w == 2) { sp.edit().putBoolean("lh_" + a.key, !hid).apply(); filter(); }
                 else if (w == 3) { sp.edit().remove("lc_" + a.key).remove("lf_" + a.key).remove("lt_" + a.key).apply(); a.launches = 0; a.score = 0; a.last = 0; filter(); }
+                else if (w == 5) setOriginalIcon(a, !orig);
                 else {
                     try {
                         Intent i = new Intent(Intent.ACTION_DELETE, Uri.fromParts("package", a.cn.getPackageName(), null));
@@ -1250,12 +1177,25 @@ public class HudLauncher extends Activity {
         final int gen = iconGen, size = iconPx(), dpi = getResources().getDisplayMetrics().densityDpi;
         final boolean frame = iconSigFrame;
         final ColorMatrixColorFilter tint = iconFilter();
-        final boolean neon = sp.getInt("lnIconTint", 0) == 2;
+        final boolean original = sp.getBoolean("lo_" + a.key, false);   // per-app: keep the app's own icon, no pack or colour
+        final boolean neon = !original && sp.getInt("lnIconTint", 0) == 2;
+        final ColorMatrixColorFilter tintF = original ? null : tint;
         final LauncherActivityInfo info = a.info;
         final boolean work = a.work;
+        final String sig = iconSig, key = a.key, pkg = a.cn.getPackageName();
+        final ComponentName cn = a.cn;
         iconExec.execute(new Runnable() { public void run() {
             Bitmap bm = null;
-            try { bm = renderIcon(info.getBadgedIcon(dpi), size, frame && loadFrames(), tint, neon, work); } catch (Throwable ignored) { }
+            java.io.File f = iconFile(sig, pkg, key);
+            try { if (f.exists()) bm = BitmapFactory.decodeFile(f.getPath()); } catch (Throwable ignored) { }
+            if (bm == null || bm.getWidth() != size) {
+                try {
+                    IconPacks pack = original || work ? null : pack();
+                    Drawable d = pack == null ? null : pack.icon(cn, dpi);
+                    bm = renderIcon(d != null ? d : info.getBadgedIcon(dpi), size, frame && loadFrames(), tintF, neon, work);
+                    if (bm != null) saveIcon(f, bm);
+                } catch (Throwable ignored) { }
+            }
             final Bitmap fb = bm;
             h.post(new Runnable() { public void run() {
                 if (gen != iconGen) return;
@@ -1338,12 +1278,67 @@ public class HudLauncher extends Activity {
         return out;
     }
 
-    boolean iconSigFrame; int iconSigTint = -1;
-    /** frame / colour changes re-render every icon */
+    boolean iconSigFrame; int iconSigTint = -1; String iconSigPack = null, iconSig = "";
+    /** frame / colour / pack changes re-render every icon (and drop the disk cache of the old style) */
     void checkIconSig() {
         boolean f = sp.getBoolean("lnIconFrame", true);
         int t = sp.getInt("lnIconTint", 0);
-        if (f != iconSigFrame || t != iconSigTint) { iconSigFrame = f; iconSigTint = t; iconGen++; icons.evictAll(); iconPending.clear(); }
+        String pk = sp.getString("lnIconPack", "");
+        if (f != iconSigFrame || t != iconSigTint || !pk.equals(iconSigPack)) {
+            iconSigFrame = f; iconSigTint = t; iconSigPack = pk;
+            iconSig = "v1_" + (f ? "f" : "n") + t + "_" + Integer.toHexString(pk.hashCode()) + "_" + iconPx();
+            iconGen++; icons.evictAll(); iconPending.clear();
+            final String keep = iconSig;
+            iconExec.execute(new Runnable() { public void run() {
+                packLoaded = null; packObj = null;
+                java.io.File[] all = iconRoot().listFiles();
+                if (all != null) for (java.io.File d : all) if (!d.getName().equals(keep)) rmTree(d);
+            } });
+        }
+    }
+
+    // ---- icon pack (loaded on the icon thread) and the rendered-icon disk cache
+    String packLoaded; IconPacks packObj;
+    /** icon thread only */
+    IconPacks pack() {
+        String pk = iconSigPack == null ? "" : iconSigPack;
+        if (!pk.equals(packLoaded)) { packLoaded = pk; packObj = IconPacks.load(this, pk); }
+        return packObj;
+    }
+
+    java.io.File iconRoot() { return new java.io.File(getCacheDir(), "icons"); }
+    java.io.File iconFile(String sig, String pkg, String key) {
+        return new java.io.File(new java.io.File(new java.io.File(iconRoot(), sig), pkg), Integer.toHexString(key.hashCode()) + ".png");
+    }
+
+    static void saveIcon(java.io.File f, Bitmap b) {
+        java.io.FileOutputStream o = null;
+        try { f.getParentFile().mkdirs(); o = new java.io.FileOutputStream(f); b.compress(Bitmap.CompressFormat.PNG, 100, o); }
+        catch (Throwable ignored) { }
+        finally { if (o != null) try { o.close(); } catch (Exception ignored) { } }
+    }
+
+    static void rmTree(java.io.File f) {
+        java.io.File[] k = f.listFiles();
+        if (k != null) for (java.io.File x : k) rmTree(x);
+        f.delete();
+    }
+
+    /** an updated / removed package's icons are rendered again */
+    void dropDisk(final String pkg) {
+        iconExec.execute(new Runnable() { public void run() {
+            java.io.File[] all = iconRoot().listFiles();
+            if (all != null) for (java.io.File d : all) rmTree(new java.io.File(d, pkg));
+        } });
+    }
+
+    /** per-app "keep the original icon" from the app menu */
+    void setOriginalIcon(final App a, boolean on) {
+        sp.edit().putBoolean("lo_" + a.key, on).apply();
+        final java.io.File f = iconFile(iconSig, a.cn.getPackageName(), a.key);
+        iconExec.execute(new Runnable() { public void run() { f.delete(); } });
+        icons.remove(a.key); iconPending.remove(a.key);
+        refreshSoon();
     }
 
     final Runnable refresh = new Runnable() { public void run() { adapter.notifyDataSetChanged(); } };

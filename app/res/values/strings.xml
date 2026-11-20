@@ -4,4 +4,6 @@
   <string name="desc">Tokyo Night HUD. Live system dashboard on home, breach sequence on unlock.</string>
     <string name="dream_name">TN-HUD · GNSS</string>
     <string name="launcher_name">TN-HUD Launcher</string>
+    <string name="shade_name">TN-HUD pull-down</string>
+    <string name="shade_desc">Pull down from the top-left (or top-right, or the whole top edge; set in TN-HUD settings) of any app to open the TN-HUD panel. Reads no screen content.</string>
 </resources>

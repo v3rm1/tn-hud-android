@@ -29,6 +29,8 @@ public class LinkListener extends NotificationListenerService {
     static final String HUD = "com.tokyonight.hud.live", STATE = "com.tokyonight.hud.LINK_STATE", PERM = "com.tokyonight.hud.permission.LINK";
     static final int MAX_NOTES = 40;
     static LinkListener instance;
+    /** reply actions of the notifications last pushed, by key */
+    final Map<String, Notification.Action> replies = new HashMap<String, Notification.Action>();
 
     final Handler h = new Handler(Looper.getMainLooper());
     MediaSessionManager msm;
@@ -113,7 +115,8 @@ public class LinkListener extends NotificationListenerService {
         Map<String, String> labels = new HashMap<String, String>();
         ArrayList<String> key = new ArrayList<String>(), pkg = new ArrayList<String>(), app = new ArrayList<String>(), title = new ArrayList<String>(), text = new ArrayList<String>();
         ArrayList<Long> when = new ArrayList<Long>();
-        ArrayList<Boolean> clear = new ArrayList<Boolean>();
+        ArrayList<Boolean> clear = new ArrayList<Boolean>(), reply = new ArrayList<Boolean>();
+        replies.clear();
         ArrayList<PendingIntent> intent = new ArrayList<PendingIntent>();
         if (all != null) {
             java.util.Arrays.sort(all, new java.util.Comparator<StatusBarNotification>() {
@@ -135,6 +138,9 @@ public class LinkListener extends NotificationListenerService {
                 key.add(s.getKey()); pkg.add(s.getPackageName()); app.add(label(s.getPackageName(), labels));
                 title.add(t == null ? "" : clip(t.toString(), 120)); text.add(b == null ? "" : clip(b.toString(), 300));
                 when.add(n.when > 0 ? n.when : s.getPostTime()); clear.add(s.isClearable()); intent.add(n.contentIntent);
+                Notification.Action ra = replyAction(n);
+                reply.add(ra != null);
+                if (ra != null) replies.put(s.getKey(), ra);
             }
         }
         String[] bp = badge.keySet().toArray(new String[0]);
@@ -143,9 +149,9 @@ public class LinkListener extends NotificationListenerService {
         i.putExtra("bPkg", bp).putExtra("bN", bn);
         i.putExtra("nKey", key.toArray(new String[0])).putExtra("nPkg", pkg.toArray(new String[0])).putExtra("nApp", app.toArray(new String[0]))
                 .putExtra("nTitle", title.toArray(new String[0])).putExtra("nText", text.toArray(new String[0]));
-        long[] w = new long[when.size()]; boolean[] cl = new boolean[clear.size()];
-        for (int k = 0; k < w.length; k++) { w[k] = when.get(k); cl[k] = clear.get(k); }
-        i.putExtra("nWhen", w).putExtra("nClear", cl).putExtra("nIntent", intent.toArray(new Parcelable[0]));
+        long[] w = new long[when.size()]; boolean[] cl = new boolean[clear.size()], rp = new boolean[reply.size()];
+        for (int k = 0; k < w.length; k++) { w[k] = when.get(k); cl[k] = clear.get(k); rp[k] = reply.get(k); }
+        i.putExtra("nWhen", w).putExtra("nClear", cl).putExtra("nReply", rp).putExtra("nIntent", intent.toArray(new Parcelable[0]));
         // media
         MediaController m = media;
         if (m != null) {
@@ -174,6 +180,30 @@ public class LinkListener extends NotificationListenerService {
         if ("toggle".equals(what)) { if (s != null && s.getState() == PlaybackState.STATE_PLAYING) t.pause(); else t.play(); }
         else if ("next".equals(what)) t.skipToNext();
         else if ("prev".equals(what)) t.skipToPrevious();
+        schedule();
+    }
+
+    /** the first action carrying a free-text RemoteInput (messaging apps' "Reply") */
+    static Notification.Action replyAction(Notification n) {
+        if (n.actions == null) return null;
+        for (Notification.Action a : n.actions) {
+            android.app.RemoteInput[] ri = a.getRemoteInputs();
+            if (ri == null || a.actionIntent == null) continue;
+            for (android.app.RemoteInput r : ri) if (r.getAllowFreeFormInput()) return a;
+        }
+        return null;
+    }
+
+    void reply(String key, String text) {
+        Notification.Action a = key == null ? null : replies.get(key);
+        if (a == null || text == null) return;
+        try {
+            Intent fill = new Intent();
+            Bundle res = new Bundle();
+            for (android.app.RemoteInput r : a.getRemoteInputs()) res.putCharSequence(r.getResultKey(), text);
+            android.app.RemoteInput.addResultsToIntent(a.getRemoteInputs(), fill, res);
+            a.actionIntent.send(this, 0, fill);
+        } catch (Throwable ignored) { }
         schedule();
     }
 

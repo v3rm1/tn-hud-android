@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.tokyonight.hud.live" android:versionCode="36" android:versionName="36.0">
+    package="com.tokyonight.hud.live" android:versionCode="37" android:versionName="37.0">
   <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="34"/>
   <uses-feature android:name="android.software.live_wallpaper" android:required="true"/>
   <uses-feature android:name="android.hardware.bluetooth" android:required="false"/>
@@ -24,6 +24,11 @@
   <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
   <uses-permission android:name="android.permission.EXPAND_STATUS_BAR"/>
   <uses-permission android:name="com.android.alarm.permission.SET_ALARM"/>
+  <!-- quick toggles: WRITE_SETTINGS is a user switch; WRITE_SECURE_SETTINGS only via a one-time adb grant -->
+  <uses-permission android:name="android.permission.WRITE_SETTINGS"/>
+  <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"/>
+  <!-- "$ command" in the launcher pop-up runs it in Termux -->
+  <uses-permission android:name="com.termux.permission.RUN_COMMAND"/>
   <!-- companion link (TN-HUD Link): signature permission, defined in both apps so install order doesn't matter -->
   <permission android:name="com.tokyonight.hud.permission.LINK" android:protectionLevel="signature" android:label="TN-HUD link"/>
   <uses-permission android:name="com.tokyonight.hud.permission.LINK"/>
@@ -31,6 +36,10 @@
   <queries>
     <intent><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent>
     <package android:name="com.tokyonight.hud.link"/>
+    <package android:name="com.termux"/>
+    <intent><action android:name="org.adw.launcher.THEMES"/></intent>
+    <intent><action android:name="com.novalauncher.THEME"/></intent>
+    <intent><action android:name="com.gau.go.launcherex.theme"/></intent>
     <intent><action android:name="android.intent.action.VIEW"/><data android:scheme="content" android:host="com.android.calendar"/></intent>
   </queries>
   <application android:label="@string/app_name" android:icon="@drawable/ic_live">
@@ -64,6 +73,20 @@
         <category android:name="android.intent.category.DEFAULT"/>
       </intent-filter>
     </activity>
+    <service android:name=".ShadeService" android:label="@string/shade_name" android:exported="true"
+        android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+      <intent-filter><action android:name="android.accessibilityservice.AccessibilityService"/></intent-filter>
+      <meta-data android:name="android.accessibilityservice" android:resource="@xml/shade"/>
+    </service>
+    <service android:name=".Tiles$Panel" android:label="HUD panel" android:icon="@drawable/ic_stat" android:exported="true"
+        android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+      <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE"/></intent-filter>
+    </service>
+    <service android:name=".Tiles$Popup" android:label="HUD launcher" android:icon="@drawable/ic_stat" android:exported="true"
+        android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+      <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE"/></intent-filter>
+    </service>
+    <receiver android:name=".TermuxRx" android:exported="false"/>
     <activity android:name=".SetWallpaper" android:exported="true" android:label="@string/app_name"
         android:theme="@android:style/Theme.Material.NoActionBar">
       <intent-filter>

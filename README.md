@@ -37,6 +37,11 @@ Built for a Galaxy S24 Ultra (1440×3120) but resolution independent. Android 8.
 - Its own *Launcher* tab in the settings app: home app, drawer style, gestures and glyphs
 - Glyphs: draw a letter on the home screen (W, M, V, N, Z, L, C, O, S, G, P, ✓, Λ, >) to open an app or run any gesture action; built-in shapes plus your own taught samples, neon trail with the recognised glyph
 - Rofi-style pop-up: `>` glyph opens a frosted-glass prompt with live results (most-used apps, apps by name, `>` commands); the C glyph opens it as `> call` with contact suggestions. `> wa`, `> wav` and `> tg` start WhatsApp voice / video and Telegram calls through the call entries those apps add to the system contacts (needs their contact sync; unofficial, may change)
+- Pop-up extras: `= 2*pi*4` (or any arithmetic) calculates and copies the result; `$ command` runs in Termux and shows the output (Termux needs `allow-external-apps = true`); plain text also finds app shortcuts and Android settings pages; search tolerates initials ("gm") and one typo
+- HUD panel: grouped notifications (tap a group to expand), swipe sideways to dismiss, inline reply for messaging apps (TN-HUD Link v2), media card with transport controls, quick toggles that really switch (auto-rotate, adaptive brightness and a brightness slider with "Modify system settings"; battery saver and location after a one-time `adb shell pm grant com.tokyonight.hud.live android.permission.WRITE_SECURE_SETTINGS`)
+- Panel everywhere: optional accessibility service ("TN-HUD pull-down") puts an invisible strip on part of the top edge of any app; dragging down from it opens the HUD panel over the app. Reads no screen content
+- Quick settings tiles: "HUD panel" and "HUD launcher"
+- Icon packs (ADW / Nova format, TN-HUD-Icons included) with frame and colour on top, per-app "keep the original icon", rendered icons cached on disk
 - Widget slot: a HUD module that hosts one real app widget (e.g. Samsung Music for track info); choose it with a long-press on home
 
 **Notification link** (optional companion, `TN-HUD-Link.apk`)
@@ -135,6 +140,13 @@ app/
     HudLauncher.java     optional home app: gesture shell over the wallpaper + text-only app drawer
     Commands.java        drawer command line table (">" prefix)
     Rofi.java            rofi-style launcher pop-up (glyphs > and C)
+    Shade.java           HUD notification / toggle panel, shared by the launcher and ShadeService
+    ShadeService.java    accessibility overlay: pull-down strip, panel over any app
+    Toggles.java         toggles reachable with WRITE_SETTINGS / WRITE_SECURE_SETTINGS, torch
+    Tiles.java           quick settings tiles
+    Calc.java            pop-up calculator
+    Termux.java          "$ command" through Termux RUN_COMMAND (TermuxRx gets the result)
+    IconPacks.java       ADW / Nova icon pack loader
     Glass.java           frosted-glass Tokyo Night dialogs
     SetWallpaper.java    Material 3 settings app
     Astro.java           Sun / Moon / planets, twilight, lunar events, meteors, Voyager model

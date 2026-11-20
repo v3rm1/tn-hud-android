@@ -306,6 +306,82 @@ public class SetWallpaper extends Activity {
             e.apply();
         } }));
         cdr.addView(rln2);
+        divider(cdr);
+        final TextView packState = text("", 14, onSurfaceVar, false);
+        packState.setPadding(0, px(8), 0, px(4));
+        cdr.addView(packState);
+        final Runnable packPaint = new Runnable() { public void run() {
+            String pk = sp.getString("lnIconPack", ""), name = null;
+            for (String[] p : IconPacks.list(SetWallpaper.this)) if (p[1].equals(pk)) name = p[0];
+            packState.setText("Icon pack: " + (pk.isEmpty() ? "none (apps' own icons)" : name == null ? pk + " (not installed)" : name)
+                    + ". Frame and colour apply on top; long-press an app for \u201cIcon: keep the original\u201d.");
+        } };
+        onResumeHooks.add(packPaint);
+        LinearLayout rpk = row();
+        rpk.addView(button("Choose icon pack", 1, new View.OnClickListener() { public void onClick(View v) {
+            final java.util.List<String[]> L = IconPacks.list(SetWallpaper.this);
+            String[] names = new String[L.size() + 1];
+            names[0] = "None";
+            int cur = 0;
+            String pk = sp.getString("lnIconPack", "");
+            for (int i = 0; i < L.size(); i++) { names[i + 1] = L.get(i)[0]; if (L.get(i)[1].equals(pk)) cur = i + 1; }
+            glass().list("Icon pack", names, cur, new Glass.Pick() { public void on(int w) {
+                sp.edit().putString("lnIconPack", w == 0 ? "" : L.get(w - 1)[1]).apply();
+                packPaint.run();
+            } }).show();
+        } }));
+        cdr.addView(rpk);
+
+        // ---- pull-down, quick toggles, tiles
+        LinearLayout csh = card("Panel everywhere", "The HUD panel (notifications, toggles, media) over any app, and quick toggles that really switch.");
+        final TextView shState = text("", 14, onSurfaceVar, false);
+        shState.setPadding(0, px(4), 0, px(4));
+        csh.addView(shState);
+        LinearLayout rsh = row();
+        rsh.addView(button("Accessibility settings", 1, new View.OnClickListener() { public void onClick(View v) {
+            try { startActivity(new Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)); } catch (Exception ignored) { }
+        } }));
+        csh.addView(rsh);
+        csh.addView(switchItem("Pull-down strip", "Drag down from the top edge of any app. Needs \u201cTN-HUD pull-down\u201d switched on in accessibility settings; it reads no screen content.", "shOn", true, null));
+        csh.addView(chipItem("Pull-down area", "The rest of the top edge still opens Android's own shade.", "shEdge", 0, new int[]{0, 1, 2}, new String[]{"Left half", "Whole top", "Right half"}));
+        divider(csh);
+        final TextView wsState = text("", 14, onSurfaceVar, false);
+        wsState.setPadding(0, px(8), 0, px(4));
+        csh.addView(wsState);
+        LinearLayout rws = row();
+        rws.addView(button("Allow changing settings", 1, new View.OnClickListener() { public void onClick(View v) {
+            try { startActivity(new Intent(android.provider.Settings.ACTION_MANAGE_WRITE_SETTINGS, android.net.Uri.parse("package:" + getPackageName()))); } catch (Exception ignored) { }
+        } }));
+        csh.addView(rws);
+        final TextView ssState = text("", 14, onSurfaceVar, false);
+        ssState.setPadding(0, px(8), 0, px(4));
+        csh.addView(ssState);
+        TextView adb = text(Toggles.ADB_GRANT, 12, onSurface, false);
+        adb.setTypeface(Typeface.MONOSPACE);
+        adb.setTextIsSelectable(true);
+        csh.addView(adb);
+        LinearLayout rss = row();
+        rss.addView(button("Copy adb command", 2, new View.OnClickListener() { public void onClick(View v) {
+            try {
+                ((android.content.ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE)).setPrimaryClip(android.content.ClipData.newPlainText("adb", Toggles.ADB_GRANT));
+                android.widget.Toast.makeText(SetWallpaper.this, "Copied", android.widget.Toast.LENGTH_SHORT).show();
+            } catch (Throwable ignored) { }
+        } }));
+        csh.addView(rss);
+        divider(csh);
+        TextView tiles = text("Quick settings tiles: open Android's quick settings, tap the edit (pencil) button and drag in \u201cHUD panel\u201d and \u201cHUD launcher\u201d.", 14, onSurfaceVar, false);
+        tiles.setPadding(0, px(8), 0, px(8));
+        csh.addView(tiles);
+        onResumeHooks.add(new Runnable() { public void run() {
+            boolean on = ShadeService.instance != null;
+            shState.setText(on ? "\u2713 TN-HUD pull-down is on" : "TN-HUD pull-down is off (accessibility settings \u203A installed apps). On Android 13+, a sideloaded app may first need App info \u203A \u22EE \u203A Allow restricted settings.");
+            shState.setTextColor(on ? primary : onSurfaceVar);
+            boolean w = Toggles.canWrite(SetWallpaper.this), sc = Toggles.canSecure(SetWallpaper.this);
+            wsState.setText((w ? "\u2713 " : "") + "Auto-rotate, adaptive brightness and the brightness slider" + (w ? " are on." : " need \u201cModify system settings\u201d."));
+            wsState.setTextColor(w ? primary : onSurfaceVar);
+            ssState.setText((sc ? "\u2713 Battery saver and location toggles are on." : "Battery saver and location need a one-time grant from a computer (USB debugging on):"));
+            ssState.setTextColor(sc ? primary : onSurfaceVar);
+        } });
 
         // ---- gestures
         LinearLayout cgs = card("Gestures", "Notifications and quick settings open Android's own panels; not every phone lets apps do that, in which case the swipe from the status bar still works.");
@@ -430,6 +506,7 @@ public class SetWallpaper extends Activity {
         }
         LinearLayout pd = card("Data on this phone", null);
         pd.addView(permRow("Calendar", "Calendar module and next-event tile.", new String[]{"android.permission.READ_CALENDAR"}, "android.permission.READ_CALENDAR", 6));
+        pd.addView(permRow("Termux commands", "Launcher pop-up: \u201c$ command\u201d runs in Termux. Termux also needs allow-external-apps = true in ~/.termux/termux.properties.", new String[]{"com.termux.permission.RUN_COMMAND"}, "com.termux.permission.RUN_COMMAND", 10));
         pd.addView(permRow("Contacts", "Launcher command line: \"> call\" and \"> sms\" by contact name.", new String[]{"android.permission.READ_CONTACTS"}, "android.permission.READ_CONTACTS", 9));
         if (Build.VERSION.SDK_INT >= 29)
             pd.addView(permRow("Physical activity", "Step count on the lock screen.", new String[]{"android.permission.ACTIVITY_RECOGNITION"}, "android.permission.ACTIVITY_RECOGNITION", 5));

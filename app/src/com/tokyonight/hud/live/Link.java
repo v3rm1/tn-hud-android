@@ -24,7 +24,7 @@ final class Link {
     static final Map<String, Integer> badges = new HashMap<String, Integer>();
     static String[] nKey = new String[0], nPkg = new String[0], nApp = new String[0], nTitle = new String[0], nText = new String[0];
     static long[] nWhen = new long[0];
-    static boolean[] nClear = new boolean[0];
+    static boolean[] nClear = new boolean[0], nReply = new boolean[0];   // nReply: has an inline-reply action
     static PendingIntent[] nIntent = new PendingIntent[0];
     static String mPkg, mApp, mTitle, mArtist, mAlbum;
     static int mState;                       // PlaybackState constants: 3 playing, 2 paused
@@ -62,6 +62,7 @@ final class Link {
             nTitle = orEmpty(i.getStringArrayExtra("nTitle")); nText = orEmpty(i.getStringArrayExtra("nText"));
             long[] w = i.getLongArrayExtra("nWhen"); nWhen = w == null ? new long[0] : w;
             boolean[] cl = i.getBooleanArrayExtra("nClear"); nClear = cl == null ? new boolean[0] : cl;
+            boolean[] rp = i.getBooleanArrayExtra("nReply"); nReply = rp == null ? new boolean[0] : rp;   // absent from Link v1
             Parcelable[] pi = i.getParcelableArrayExtra("nIntent");
             nIntent = new PendingIntent[pi == null ? 0 : pi.length];
             for (int k = 0; k < nIntent.length; k++) nIntent[k] = pi[k] instanceof PendingIntent ? (PendingIntent) pi[k] : null;
@@ -72,7 +73,7 @@ final class Link {
             dnd = i.getIntExtra("dnd", 1);
         } else {
             synchronized (badges) { badges.clear(); }
-            nKey = new String[0]; nPkg = nKey; nApp = nKey; nTitle = nKey; nText = nKey; nWhen = new long[0]; nClear = new boolean[0]; nIntent = new PendingIntent[0];
+            nKey = new String[0]; nPkg = nKey; nApp = nKey; nTitle = nKey; nText = nKey; nWhen = new long[0]; nClear = new boolean[0]; nReply = nClear; nIntent = new PendingIntent[0];
             mTitle = null; mPkg = null;
         }
         Listener[] ls;
@@ -82,10 +83,16 @@ final class Link {
 
     static String[] orEmpty(String[] a) { return a == null ? new String[0] : a; }
 
-    static void send(Context c, String cmd, String key, int mode) {
+    static void send(Context c, String cmd, String key, int mode) { send(c, cmd, key, mode, null); }
+
+    /** inline reply through the notification's own reply action (Link v2+) */
+    static void reply(Context c, String key, String text) { send(c, "reply", key, 0, text); }
+
+    static void send(Context c, String cmd, String key, int mode, String text) {
         try {
             Intent i = new Intent(CMD).setComponent(new ComponentName(PKG, PKG + ".LinkCmdRx")).putExtra("cmd", cmd);
             if (key != null) i.putExtra("key", key);
+            if (text != null) i.putExtra("text", text);
             i.putExtra("mode", mode);
             c.sendBroadcast(i, PERM);
         } catch (Throwable ignored) { }
