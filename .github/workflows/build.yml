@@ -1,6 +1,7 @@
 name: Build APKs
 
-# Every push / PR: run the checks and build both APKs (downloadable as a workflow artifact).
+# Every push / PR: run the checks and build all three APKs (wallpaper app, icon pack, notification link),
+# each uploaded as its own workflow artifact.
 # A tag like v32 also publishes a GitHub release with the APKs attached (Obtainium can follow it).
 #
 # Signing: add repository secrets
@@ -67,10 +68,25 @@ jobs:
           rm -f dist/*.idsig
           ls -la dist
 
+      - name: Check all three APKs exist
+        run: |
+          for f in TN-HUD-Live TN-HUD-Icons TN-HUD-Link; do
+            [ -f "dist/$f.apk" ] || { echo "::error::dist/$f.apk was not built"; exit 1; }
+          done
+
+      # one artifact per APK, so each shows up separately on the run page
       - uses: actions/upload-artifact@v4
         with:
-          name: tn-hud-${{ env.VER }}-${{ env.SIGNED_WITH }}
-          path: dist/*.apk
+          name: TN-HUD-Live-${{ env.VER }}-${{ env.SIGNED_WITH }}
+          path: dist/TN-HUD-Live.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TN-HUD-Icons-${{ env.VER }}-${{ env.SIGNED_WITH }}
+          path: dist/TN-HUD-Icons.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TN-HUD-Link-${{ env.VER }}-${{ env.SIGNED_WITH }}
+          path: dist/TN-HUD-Link.apk
 
       - name: Release
         if: startsWith(github.ref, 'refs/tags/v') && env.SIGNED_WITH == 'release'
