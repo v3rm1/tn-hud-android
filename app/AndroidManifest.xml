@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.tokyonight.hud.live" android:versionCode="31" android:versionName="31.0">
+  <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="34"/>
+  <uses-feature android:name="android.software.live_wallpaper" android:required="true"/>
+  <uses-feature android:name="android.hardware.bluetooth" android:required="false"/>
+  <uses-feature android:name="android.hardware.sensor.gyroscope" android:required="false"/>
+  <uses-feature android:name="android.hardware.location" android:required="false"/>
+  <uses-feature android:name="android.hardware.location.network" android:required="false"/>
+  <uses-feature android:name="android.hardware.location.gps" android:required="false"/>
+  <uses-feature android:name="android.hardware.sensor.stepcounter" android:required="false"/>
+  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+  <uses-permission android:name="android.permission.INTERNET"/>
+  <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30"/>
+  <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+  <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+  <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+  <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
+  <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION"/>
+  <uses-permission android:name="android.permission.READ_CALENDAR"/>
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+  <uses-permission android:name="android.permission.VIBRATE"/>
+  <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+  <queries>
+    <intent><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent>
+    <intent><action android:name="android.intent.action.VIEW"/><data android:scheme="content" android:host="com.android.calendar"/></intent>
+  </queries>
+  <application android:label="@string/app_name" android:icon="@drawable/ic_live">
+    <service android:name=".HudWallpaper" android:label="@string/app_name"
+        android:permission="android.permission.BIND_WALLPAPER" android:exported="true">
+      <intent-filter><action android:name="android.service.wallpaper.WallpaperService"/></intent-filter>
+      <meta-data android:name="android.service.wallpaper" android:resource="@xml/wallpaper"/>
+    </service>
+    <service android:name=".HudDream" android:label="@string/dream_name" android:exported="true"
+        android:permission="android.permission.BIND_DREAM_SERVICE">
+      <intent-filter>
+        <action android:name="android.service.dreams.DreamService"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+      </intent-filter>
+      <meta-data android:name="android.service.dream" android:resource="@xml/dream"/>
+    </service>
+    <service android:name=".AlertJob" android:exported="false" android:permission="android.permission.BIND_JOB_SERVICE"/>
+    <receiver android:name=".AlertRx" android:exported="false"/>
+    <activity android:name=".SetWallpaper" android:exported="true" android:label="@string/app_name"
+        android:theme="@android:style/Theme.Material.NoActionBar">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN"/>
+        <category android:name="android.intent.category.LAUNCHER"/>
+      </intent-filter>
+    </activity>
+  </application>
+</manifest>

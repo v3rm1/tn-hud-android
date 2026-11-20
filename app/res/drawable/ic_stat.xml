@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- notification icon: chamfered HUD frame with a star; white on transparent (status bar uses the alpha only) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+  <path android:fillColor="#FFFFFFFF"
+      android:pathData="M7,2h12l3,3v12l-5,5H5l-3,-3V7zM8,4L4,8v10l2,2h10l4,-4V6l-2,-2z"/>
+  <path android:fillColor="#FFFFFFFF"
+      android:pathData="M12,6.5l1.5,3.6 3.9,0.3 -3,2.5 0.9,3.8L12,14.6 8.7,16.7l0.9,-3.8 -3,-2.5 3.9,-0.3z"/>
+</vector>

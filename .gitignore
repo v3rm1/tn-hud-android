@@ -1,0 +1,24 @@
+# build output
+build/
+dist/
+out/
+*.apk
+*.aab
+*.idsig
+*.dex
+*.class
+
+# signing keys: never commit
+keystore/
+*.jks
+*.keystore
+*.p12
+
+# local / editor
+local.properties
+.idea/
+*.iml
+.vscode/
+.DS_Store
+__pycache__/
+*.pyc

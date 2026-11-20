@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="app_name">TN-HUD Icons</string>
+  <string name="theme_title">TN-HUD Icons</string>
+  <string name="theme_description">Tokyo Night HUD frame around each app\'s original icon</string>
+  <string name="authorName">TN-HUD</string>
+</resources>
