@@ -14,7 +14,7 @@ import java.util.Locale;
  */
 final class Glyph {
     static final int N = 32;
-    static final String[] NAMES = {"W", "M", "V", "N", "Z", "L", "C", "O", "S", "G", "P", "✓", "Λ"};
+    static final String[] NAMES = {"W", "M", "V", "N", "Z", "L", "C", "O", "S", "G", "P", "✓", "Λ", ">"};
     static final float ACCEPT = 0.86f, MARGIN = 0.015f;
 
     /** built-in templates in a unit box, y down, drawn the usual way */
@@ -33,6 +33,7 @@ final class Glyph {
             case "P": return poly(0, 1, 0, 0, .6f, 0, .85f, .2f, .6f, .45f, 0, .45f);
             case "✓": return poly(0, .6f, .35f, 1, 1, 0);
             case "Λ": return poly(0, 1, .5f, 0, 1, 1);
+            case ">": return poly(0, 0, 1, .5f, 0, 1);
         }
         return null;
     }

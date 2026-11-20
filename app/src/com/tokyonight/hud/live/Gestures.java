@@ -5,9 +5,9 @@ import android.content.SharedPreferences;
 /** launcher gesture -> action mapping, shared by the launcher and the settings app */
 final class Gestures {
     static final int NONE = 0, DRAWER = 1, NOTIFICATIONS = 2, QUICK_SETTINGS = 3, TORCH = 4, CAMERA = 5, NEXT_TAB = 6, HUD_SETTINGS = 7, OPEN_APP = 8,
-            HUD_NOTIFICATIONS = 9;
+            HUD_NOTIFICATIONS = 9, COMMAND_LINE = 10, CALL_PROMPT = 11;
     static final String[] ACTION_NAMES = {"Nothing", "App drawer", "Notifications", "Quick settings", "Torch on / off", "Camera", "Next tab",
-            "HUD settings", "Open an app…", "HUD notification panel"};
+            "HUD settings", "Open an app…", "HUD notification panel", "Launcher pop-up (apps, > commands)", "Call pop-up (contacts)"};
 
     static final String SWIPE_UP = "up", DOWN_LEFT = "downL", DOWN_RIGHT = "downR", TWO_DOWN = "two", DOUBLE_TAP = "dbl", HOME_PRESS = "home";
     static final String[] KEYS = {SWIPE_UP, DOWN_LEFT, DOWN_RIGHT, TWO_DOWN, DOUBLE_TAP, HOME_PRESS};
@@ -29,6 +29,8 @@ final class Gestures {
     static String app(SharedPreferences sp, String g) { return sp.getString("lg_" + g + "_app", null); }
 
     // glyphs share the action list; stored as gm_<glyph> / gm_<glyph>_app
-    static int glyphAction(SharedPreferences sp, String glyph) { return sp.getInt("gm_" + glyph, NONE); }
+    static int glyphAction(SharedPreferences sp, String glyph) { return sp.getInt("gm_" + glyph, glyphDef(glyph)); }
+    /** out-of-the-box glyphs: '>' opens the launcher pop-up, C the call pop-up */
+    static int glyphDef(String glyph) { return ">".equals(glyph) ? COMMAND_LINE : "C".equals(glyph) ? CALL_PROMPT : NONE; }
     static String glyphApp(SharedPreferences sp, String glyph) { return sp.getString("gm_" + glyph + "_app", null); }
 }

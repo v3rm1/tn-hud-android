@@ -568,6 +568,8 @@ public class HudLauncher extends Activity {
             case Gestures.NEXT_TAB: command("tnhud.page", 0, 0, 1); break;
             case Gestures.HUD_SETTINGS: openSettings(); break;
             case Gestures.HUD_NOTIFICATIONS: openPanel(); break;
+            case Gestures.COMMAND_LINE: new Rofi(this, "").show(); break;
+            case Gestures.CALL_PROMPT: new Rofi(this, "> call ").show(); break;
             case Gestures.OPEN_APP: {
                 for (App x : apps) if (x.key.equals(appKey)) { launch(x); return; }
                 break;
@@ -662,7 +664,7 @@ public class HudLauncher extends Activity {
         search.setTypeface(mono);
         search.setTextColor(FG);
         search.setHintTextColor(COMMENT);
-        search.setHint("SEARCH · ENTER OPENS THE TOP MATCH");
+        search.setHint("SEARCH · ENTER OPENS · > FOR COMMANDS");
         search.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
         search.setSingleLine(true);
         search.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS | InputType.TYPE_TEXT_VARIATION_FILTER);
@@ -693,6 +695,7 @@ public class HudLauncher extends Activity {
             public void onItemClick(android.widget.AdapterView<?> p, View v, int pos, long id) {
                 Object o = rows.get(pos);
                 if (o instanceof App) launch((App) o);
+                else if (o instanceof Commands.Cmd) pickCommand((Commands.Cmd) o);
                 else if (o == SHOW_HIDDEN) { showHidden = !showHidden; filter(); }
             }
         });
@@ -752,6 +755,7 @@ public class HudLauncher extends Activity {
 
     void closeDrawer() {
         hideKeyboard();
+        if (drawer.getVisibility() != View.VISIBLE) return;     // pop-up commands run with the drawer closed
         drawer.animate().alpha(0f).translationY(60 * dp).setDuration(120).withEndAction(new Runnable() {
             public void run() { drawer.setVisibility(View.GONE); placeWidget(lastRect); }
         }).start();
@@ -814,7 +818,9 @@ public class HudLauncher extends Activity {
 
     void filter() {
         rows.clear();
-        String q = norm(search == null ? "" : search.getText().toString().trim());
+        String raw = search == null ? "" : search.getText().toString().trim();
+        if (Commands.isCommandLine(raw)) { filterCommands(raw); return; }
+        String q = norm(raw);
         boolean showHidden = q.length() > 0 && sp.getBoolean("lnSearchHidden", true);
         int visible = 0;
         if (q.isEmpty()) {
@@ -878,6 +884,229 @@ public class HudLauncher extends Activity {
         }
         boolean noMatch = !q.isEmpty() && visible == 0;
         search.setOnEditorActionListener(noMatch ? webSearch : openTop);
+    }
+
+    // ------------------------------------------------------------------ command line ('>' in the search field)
+    void filterCommands(String raw) {
+        java.util.ArrayList<Commands.Cmd> m = Commands.match(Commands.split(raw)[0]);
+        rows.add(m.isEmpty() ? "UNKNOWN COMMAND · > HELP LISTS THEM" : "// COMMANDS");
+        rows.addAll(m);
+        count.setText("  · " + m.size());
+        adapter.notifyDataSetChanged();
+        list.setSelection(0);
+        rail.removeAllViews();
+        search.setOnEditorActionListener(runTop);
+    }
+
+    final TextView.OnEditorActionListener runTop = new TextView.OnEditorActionListener() {
+        public boolean onEditorAction(TextView v, int id, KeyEvent ev) {
+            for (Object o : rows) if (o instanceof Commands.Cmd) { pickCommand((Commands.Cmd) o); break; }
+            return true;
+        }
+    };
+
+    /** a command that needs an argument and has none gets typed into the field instead of run */
+    void pickCommand(Commands.Cmd c) {
+        String arg = Commands.split(search.getText().toString().trim())[1];
+        if (c.needsArgs() && arg.isEmpty()) {
+            String t = "> " + c.name + " ";
+            search.setText(t); search.setSelection(t.length());
+            return;
+        }
+        runCommand(c, arg);
+    }
+
+    /** best label match for a command argument, ties broken by frecency */
+    App findApp(String arg) {
+        String q = norm(arg);
+        if (q.isEmpty()) return null;
+        App best = null; int bs = 0; float bf = -1; long now = System.currentTimeMillis();
+        for (App a : apps) {
+            int sc = score(a.label, q);
+            if (sc > bs || (sc == bs && sc > 0 && a.now(now) > bf)) { best = a; bs = sc; bf = a.now(now); }
+        }
+        return bs > 0 ? best : null;
+    }
+
+    void toast(String s) { android.widget.Toast.makeText(this, s, android.widget.Toast.LENGTH_SHORT).show(); }
+
+    void runCommand(Commands.Cmd c, String arg) {
+        String n = c.name;
+        try {
+            if (n.equals("help")) { search.setText(">"); search.setSelection(1); return; }
+            if (n.equals("hide") || n.equals("unhide")) {
+                App a = findApp(arg);
+                if (a == null) { toast("No app matches \"" + arg + "\""); return; }
+                sp.edit().putBoolean("lh_" + a.key, n.equals("hide")).apply();
+                toast((n.equals("hide") ? "Hidden: " : "Shown: ") + a.label);
+                search.setText("");
+                return;
+            }
+            if (n.equals("settings")) { openSettings(); return; }
+            Intent i = null;
+            if (n.equals("torch")) torch();
+            else if (n.equals("wifi")) panelIntent("android.settings.panel.action.WIFI").onClick(search);
+            else if (n.equals("net")) panelIntent("android.settings.panel.action.INTERNET_CONNECTIVITY").onClick(search);
+            else if (n.equals("bt")) panelIntent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS).onClick(search);
+            else if (n.equals("vol")) panelIntent("android.settings.panel.action.VOLUME").onClick(search);
+            else if (n.equals("qs")) statusBar(true);
+            else if (n.equals("camera")) runAction(Gestures.CAMERA, null);
+            else if (n.equals("tab")) command("tnhud.page", 0, 0, 1);
+            else if (n.equals("android")) i = new Intent(android.provider.Settings.ACTION_SETTINGS);
+            else if (n.equals("call") || n.equals("sms")) {
+                if (isNumber(arg)) i = numberIntent(n, arg);
+                else { contactCommand(c, arg); return; }
+            }
+            else if (Commands.mime(n) != null) { contactCommand(c, arg); return; }
+            else if (n.equals("web")) i = new Intent(Intent.ACTION_WEB_SEARCH).putExtra(android.app.SearchManager.QUERY, arg);
+            else if (n.equals("maps")) i = new Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=" + Uri.encode(arg)));
+            else if (n.equals("timer")) {
+                int sec;
+                try { sec = Math.round(Float.parseFloat(arg.replace(',', '.')) * 60); } catch (Exception e) { toast("Timer needs minutes, e.g. > timer 5"); return; }
+                if (sec <= 0 || sec > 86400) { toast("Timer must be between 1 second and 24 hours"); return; }
+                i = new Intent(android.provider.AlarmClock.ACTION_SET_TIMER).putExtra(android.provider.AlarmClock.EXTRA_LENGTH, sec)
+                        .putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, false);
+            } else if (n.equals("alarm")) {
+                int[] t = Commands.parseTime(arg);
+                if (t == null) { toast("Alarm needs a time, e.g. > alarm 7:30"); return; }
+                i = new Intent(android.provider.AlarmClock.ACTION_SET_ALARM).putExtra(android.provider.AlarmClock.EXTRA_HOUR, t[0])
+                        .putExtra(android.provider.AlarmClock.EXTRA_MINUTES, t[1]).putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, false);
+            } else if (n.equals("info")) {
+                App a = findApp(arg);
+                if (a == null) { toast("No app matches \"" + arg + "\""); return; }
+                la.startAppDetailsActivity(a.cn, a.user, null, null);
+            }
+            if (i != null) startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            closeDrawer();
+            if (n.equals("notif")) openPanel();
+        } catch (Exception e) { toast("Nothing on this phone handles \"" + n + "\""); }
+    }
+
+    // ---- call / sms by contact name (READ_CONTACTS, asked the first time a name is used)
+    static final String P_CONTACTS = "android.permission.READ_CONTACTS";
+    static final int RC_CONTACTS = 43;
+    Commands.Cmd pendingCmd; String pendingArg;
+    Rofi rofi;                                                   // open launcher pop-up, refreshed after a permission grant
+
+    static boolean isNumber(String s) { return s.matches("[+\\d\\s()\\-#*.]+") && s.matches(".*\\d.*"); }
+
+    static Intent numberIntent(String cmd, String number) {
+        return cmd.equals("call") ? new Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + Uri.encode(number)))
+                : new Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:" + Uri.encode(number)));
+    }
+
+    void contactCommand(Commands.Cmd c, String name) {
+        if (checkSelfPermission(P_CONTACTS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            pendingCmd = c; pendingArg = name;
+            requestPermissions(new String[]{P_CONTACTS}, RC_CONTACTS);
+            return;
+        }
+        final String cmd = c.name;
+        final java.util.ArrayList<String[]> hits = contactHits(cmd, name);    // {display name, number or data id, label}
+        if (hits.isEmpty()) { toast(Commands.mime(cmd) == null ? "No contact with a number matches \"" + name + "\""
+                : "No " + c.help.split(" ")[0] + " contact matches \"" + name + "\" (is the app's contact sync on?)"); return; }
+        if (hits.size() == 1) { contactAction(cmd, hits.get(0)[1]); return; }
+        String[] items = new String[hits.size()];
+        for (int k = 0; k < items.length; k++) items[k] = hits.get(k)[0] + "  \u00B7  " + hits.get(k)[2];
+        glass().list(c.help + ": " + name, items, -1, new Glass.Pick() {
+            public void on(int w) { contactAction(cmd, hits.get(w)[1]); }
+        }).show();
+    }
+
+    boolean hasContacts() { return checkSelfPermission(P_CONTACTS) == android.content.pm.PackageManager.PERMISSION_GRANTED; }
+
+    java.util.ArrayList<String[]> contactHits(String cmd, String name) {
+        String m = Commands.mime(cmd);
+        return m == null ? contactNumbers(name) : messengerContacts(name, m);
+    }
+
+    void contactAction(String cmd, String target) {
+        if (Commands.mime(cmd) == null) dialContact(cmd, target);
+        else messengerCall(cmd, Long.parseLong(target));
+    }
+
+    /** contacts carrying a messenger's call entry: {display name, data row id, label} */
+    java.util.ArrayList<String[]> messengerContacts(String name, String mime) {
+        java.util.ArrayList<String[]> out = new java.util.ArrayList<String[]>();
+        android.database.Cursor cu = null;
+        try {
+            cu = getContentResolver().query(android.provider.ContactsContract.Data.CONTENT_URI,
+                    new String[]{android.provider.ContactsContract.Data._ID, android.provider.ContactsContract.Data.DISPLAY_NAME,
+                            android.provider.ContactsContract.Data.DATA3},
+                    android.provider.ContactsContract.Data.MIMETYPE + "=? AND " + android.provider.ContactsContract.Data.DISPLAY_NAME + " LIKE ?",
+                    new String[]{mime, "%" + name.replace("%", "") + "%"},
+                    android.provider.ContactsContract.Data.STARRED + " DESC, " + android.provider.ContactsContract.Data.DISPLAY_NAME + " ASC");
+            while (cu != null && cu.moveToNext() && out.size() < 12) {
+                String label = cu.getString(2);                   // e.g. "Voice call +47 …" as the messenger wrote it
+                out.add(new String[]{cu.getString(1), String.valueOf(cu.getLong(0)), label == null ? "" : label});
+            }
+        } catch (Exception ignored) {
+        } finally { if (cu != null) cu.close(); }
+        return out;
+    }
+
+    void messengerCall(String cmd, long dataId) {
+        try {
+            Intent i = new Intent(Intent.ACTION_VIEW);
+            i.setDataAndType(android.content.ContentUris.withAppendedId(android.provider.ContactsContract.Data.CONTENT_URI, dataId), Commands.mime(cmd));
+            i.setPackage(Commands.pkg(cmd));
+            startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            closeDrawer();
+        } catch (Exception e) { toast("Couldn't start the call in " + (cmd.equals("tg") ? "Telegram" : "WhatsApp")); }
+    }
+
+    void dialContact(String cmd, String number) {
+        try { startActivity(numberIntent(cmd, number).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); closeDrawer(); }
+        catch (Exception e) { toast("Nothing on this phone handles \"" + cmd + "\""); }
+    }
+
+    /** phone numbers of contacts whose name matches, starred and most-contacted first, duplicates folded */
+    java.util.ArrayList<String[]> contactNumbers(String name) {
+        java.util.ArrayList<String[]> out = new java.util.ArrayList<String[]>();
+        java.util.HashSet<String> seen = new java.util.HashSet<String>();
+        android.database.Cursor cu = null;
+        try {
+            Uri u = Uri.withAppendedPath(android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_FILTER_URI, Uri.encode(name));
+            cu = getContentResolver().query(u, new String[]{
+                    android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                    android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER,
+                    android.provider.ContactsContract.CommonDataKinds.Phone.TYPE,
+                    android.provider.ContactsContract.CommonDataKinds.Phone.LABEL},
+                    null, null,
+                    android.provider.ContactsContract.CommonDataKinds.Phone.STARRED + " DESC, "
+                            + android.provider.ContactsContract.CommonDataKinds.Phone.TIMES_CONTACTED + " DESC, "
+                            + android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " ASC");
+            while (cu != null && cu.moveToNext() && out.size() < 12) {
+                String dn = cu.getString(0), num = cu.getString(1);
+                if (num == null) continue;
+                String key = (dn + "|" + num.replaceAll("[^+\\d]", "")).toLowerCase(Locale.ROOT);
+                if (!seen.add(key)) continue;
+                CharSequence type = android.provider.ContactsContract.CommonDataKinds.Phone.getTypeLabel(getResources(), cu.getInt(2), cu.getString(3));
+                out.add(new String[]{dn == null ? num : dn, num, String.valueOf(type).toLowerCase(Locale.ROOT)});
+            }
+        } catch (Exception ignored) {
+        } finally { if (cu != null) cu.close(); }
+        return out;
+    }
+
+    @Override public void onRequestPermissionsResult(int rc, String[] p, int[] r) {
+        if (rc != RC_CONTACTS) { super.onRequestPermissionsResult(rc, p, r); return; }
+        Commands.Cmd c = pendingCmd; String a = pendingArg;
+        pendingCmd = null; pendingArg = null;
+        if (rofi != null) rofi.refresh();
+        if (c == null) return;
+        if (r.length > 0 && r[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) contactCommand(c, a);
+        else toast("Without contacts access, " + c.name + " takes a number");
+    }
+
+    CharSequence commandLabel(Commands.Cmd c, boolean top) {
+        String head = "\u203A " + c.name.toUpperCase(Locale.ROOT), args = c.args == null ? "" : " " + c.args, tail = "   " + c.help;
+        android.text.SpannableString ss = new android.text.SpannableString(head + args + tail);
+        ss.setSpan(new android.text.style.ForegroundColorSpan(top ? CYAN : FG), 0, head.length(), 0);
+        ss.setSpan(new android.text.style.ForegroundColorSpan(BLUE), head.length(), head.length() + args.length(), 0);
+        ss.setSpan(new android.text.style.ForegroundColorSpan(COMMENT), head.length() + args.length(), ss.length(), 0);
+        ss.setSpan(new android.text.style.RelativeSizeSpan(0.72f), head.length() + args.length(), ss.length(), 0);
+        return ss;
     }
 
     final TextView.OnEditorActionListener openTop = new TextView.OnEditorActionListener() {
@@ -1130,62 +1359,111 @@ public class HudLauncher extends Activity {
     }
 
     ColorMatrixColorFilter monoF;
-    /** icon colour: 0 original, 1 mono, 2 neon (see neonLut); only mono is a colour filter */
+    /** icon colour: 0 original, 1 mono, 2 neon (see neonize); only mono is a colour filter */
     ColorMatrixColorFilter iconFilter() {
         if (sp.getInt("lnIconTint", 0) != 1) return null;
         if (monoF == null) { ColorMatrix cm = new ColorMatrix(); cm.setSaturation(0); monoF = new ColorMatrixColorFilter(cm); }
         return monoF;
     }
 
-    /** neon gradient map: deep blue shadows, blue mids, cyan highlights, Tokyo Night foreground at the top */
-    static final float[] NEON_POS = {0f, 0.42f, 0.74f, 1f};
-    static final int[] NEON_COL = {0x34467C, 0x7AA2F7, 0x7DCFFF, 0xC0CAF5};
-    static int[] neonLut;
-    static synchronized int[] neonLut() {
-        if (neonLut == null) {
-            int[] l = new int[256];
-            for (int i = 0; i < 256; i++) {
-                float t = i / 255f;
-                int k = 0;
-                while (k < NEON_POS.length - 2 && t > NEON_POS[k + 1]) k++;
-                float f = (t - NEON_POS[k]) / (NEON_POS[k + 1] - NEON_POS[k]);
-                int a = NEON_COL[k], b = NEON_COL[k + 1], rgb = 0;
-                for (int sh = 16; sh >= 0; sh -= 8) {
-                    int ca = (a >> sh) & 255, cb = (b >> sh) & 255;
-                    rgb |= Math.round(ca + (cb - ca) * f) << sh;
-                }
-                l[i] = rgb;
-            }
-            neonLut = l;
-        }
-        return neonLut;
-    }
-
     /**
-     * Recolours a bitmap in place through the neon ramp. Luminance is stretched to the icon's own range first, so
-     * low-contrast icons (white tiles, pastel logos) still separate shape from background instead of going flat.
+     * Neon sign version of an icon, in the icon's own colours. The shapes become dark tinted glass, their outlines
+     * (edges in brightness and in alpha) become bright tubes in the local hue, and a soft glow spreads around the tubes.
+     * Grey or white parts take the icon's dominant hue (Tokyo Night cyan for an all-grey icon).
      */
     static void neonize(Bitmap b) {
-        int w = b.getWidth(), hh = b.getHeight();
-        int[] px = new int[w * hh];
+        int w = b.getWidth(), hh = b.getHeight(), n = w * hh;
+        int[] px = new int[n];
         b.getPixels(px, 0, w, 0, 0, w, hh);
-        int lo = 255, hi = 0;
-        for (int p : px) {
-            if ((p >>> 24) < 32) continue;
-            int y = lum(p);
-            if (y < lo) lo = y;
-            if (y > hi) hi = y;
+        float[] lum = new float[n], al = new float[n], hue = new float[n], sat = new float[n], bins = new float[36], hsv = new float[3];
+        for (int i = 0; i < n; i++) {
+            int p = px[i];
+            float a = (p >>> 24) / 255f;
+            al[i] = a;
+            if (a == 0) continue;
+            Color.colorToHSV(p | 0xFF000000, hsv);
+            hue[i] = hsv[0]; sat[i] = hsv[1]; lum[i] = lum(p) / 255f;
+            bins[((int) (hsv[0] / 10)) % 36] += hsv[1] * hsv[2] * a;
         }
-        int span = hi - lo;
-        int[] lut = neonLut();
-        for (int i = 0; i < px.length; i++) {
-            int p = px[i], al = p >>> 24;
-            if (al == 0) continue;
-            int y = lum(p);
-            if (span >= 40) y = Math.max(0, Math.min(255, (y - lo) * 255 / span));
-            px[i] = (al << 24) | lut[y];
+        int bb = 0;
+        for (int k = 1; k < 36; k++) if (bins[k] > bins[bb]) bb = k;
+        float dom = bins[bb] > n * 0.002f ? bb * 10 + 5 : 197;   // 197: hue of #7DCFFF
+
+        // tube strength: Sobel edges of brightness (inside the shape) and of alpha (the silhouette)
+        float[] e = new float[n];
+        for (int y = 1; y < hh - 1; y++) for (int x = 1; x < w - 1; x++) {
+            int i = y * w + x;
+            float gl = sob(lum, al, w, i, true), ga = sob(lum, al, w, i, false);
+            e[i] = Math.min(1f, Math.max(gl, ga) / 1.1f);
+        }
+        float[] glow = new float[n], tmp = new float[n];
+        int r = Math.max(2, w / 36);
+        boxBlur(e, tmp, glow, w, hh, r);
+        boxBlur(glow, tmp, glow, w, hh, r);
+
+        for (int i = 0; i < n; i++) {
+            float a = al[i], ei = e[i], gi = Math.min(1f, glow[i] * 2.2f);
+            boolean coloured = a > 0 && sat[i] > 0.22f;
+            float h = coloured ? hue[i] : dom;
+            // tube hue: the most saturated pixel around, so a white-on-colour edge takes the colour, not the dominant hue
+            float th = h, best = coloured ? sat[i] : 0.22f;
+            int x0 = i % w, y0 = i / w;
+            for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) {
+                int x = x0 + dx, y = y0 + dy;
+                if (x < 0 || y < 0 || x >= w || y >= hh) continue;
+                int j = y * w + x;
+                if (al[j] > 0 && sat[j] > best) { best = sat[j]; th = hue[j]; }
+            }
+            hsv[0] = h; hsv[1] = coloured ? 0.85f : 0.35f; hsv[2] = 0.10f + 0.24f * lum[i];   // grey / white parts stay mostly neutral glass
+            int fill = Color.HSVToColor(hsv);
+            hsv[0] = th; hsv[1] = 0.55f; hsv[2] = 1f;             // tube: bright, slightly washed towards white like a lit tube
+            int tube = Color.HSVToColor(hsv);
+            hsv[0] = a > 0.5f ? h : dom; hsv[1] = 0.9f; hsv[2] = 1f;
+            int gc = Color.HSVToColor(hsv);
+            // premultiplied: glass fill and tube by coverage, plus the glow added on top (and spilling past the shape)
+            float fa = a * (1 - ei), ga = gi * 0.55f;
+            float cov = Math.min(1f, fa + ei), oa = Math.min(1f, cov + ga * (1 - cov));
+            if (oa <= 0.004f) { px[i] = 0; continue; }
+            int out = 0;
+            for (int sh = 16; sh >= 0; sh -= 8) {
+                float pm = ((fill >> sh) & 255) * fa + ((tube >> sh) & 255) * ei + ((gc >> sh) & 255) * ga;
+                out |= Math.min(255, Math.round(pm / oa)) << sh;
+            }
+            px[i] = (Math.round(oa * 255) << 24) | out;
         }
         b.setPixels(px, 0, w, 0, 0, w, hh);
+    }
+
+    /** Sobel magnitude at i of premultiplied brightness (bright) or of alpha */
+    static float sob(float[] l, float[] a, int w, int i, boolean bright) {
+        float tl = v(l, a, i - w - 1, bright), t = v(l, a, i - w, bright), tr = v(l, a, i - w + 1, bright);
+        float ml = v(l, a, i - 1, bright), mr = v(l, a, i + 1, bright);
+        float bl = v(l, a, i + w - 1, bright), bo = v(l, a, i + w, bright), br = v(l, a, i + w + 1, bright);
+        float gx = (tr + 2 * mr + br) - (tl + 2 * ml + bl), gy = (bl + 2 * bo + br) - (tl + 2 * t + tr);
+        return (float) Math.sqrt(gx * gx + gy * gy);
+    }
+
+    static float v(float[] l, float[] a, int i, boolean bright) { return bright ? l[i] * a[i] : a[i]; }
+
+    /** separable box blur, radius r; dst may be src */
+    static void boxBlur(float[] src, float[] tmp, float[] dst, int w, int h, int r) {
+        float k = 1f / (2 * r + 1);
+        for (int y = 0; y < h; y++) {
+            float acc = 0;
+            for (int x = -r; x <= r; x++) acc += src[y * w + Math.max(0, Math.min(w - 1, x))];
+            for (int x = 0; x < w; x++) {
+                tmp[y * w + x] = acc * k;
+                acc += src[y * w + Math.min(w - 1, x + r + 1)] - src[y * w + Math.max(0, x - r)];
+            }
+        }
+        for (int x = 0; x < w; x++) {
+            float acc = 0;
+            for (int y = -r; y <= r; y++) acc += tmp[Math.max(0, Math.min(h - 1, y)) * w + x];
+            for (int y = 0; y < h; y++) {
+                dst[y * w + x] = acc * k;
+                acc += tmp[Math.min(h - 1, y + r + 1) * w + x] - tmp[Math.max(0, y - r) * w + x];
+            }
+        }
     }
 
     static int lum(int p) { return (54 * ((p >> 16) & 255) + 183 * ((p >> 8) & 255) + 19 * (p & 255)) >> 8; }
@@ -1212,25 +1490,32 @@ public class HudLauncher extends Activity {
         return sl;
     }
 
-    static final int T_TEXT = 0, T_HEAD = 1, T_ICON = 2, T_GRID = 3, T_HIDDEN = 4;
+    static final int T_TEXT = 0, T_HEAD = 1, T_ICON = 2, T_GRID = 3, T_HIDDEN = 4, T_CMD = 5;
 
     final class AppAdapter extends BaseAdapter {
         public int getCount() { return rows.size(); }
         public Object getItem(int i) { return rows.get(i); }
         public long getItemId(int i) { return i; }
-        public int getViewTypeCount() { return 5; }
+        public int getViewTypeCount() { return 6; }
         public int getItemViewType(int i) {
             Object o = rows.get(i);
             if (o == SHOW_HIDDEN) return T_HIDDEN;
+            if (o instanceof Commands.Cmd) return T_CMD;
             if (o instanceof App) return style == ST_LIST ? T_ICON : T_TEXT;
             if (o instanceof App[]) return T_GRID;
             return T_HEAD;
         }
-        public boolean isEnabled(int i) { return rows.get(i) instanceof App || rows.get(i) == SHOW_HIDDEN; }
+        public boolean isEnabled(int i) { Object o = rows.get(i); return o instanceof App || o instanceof Commands.Cmd || o == SHOW_HIDDEN; }
 
         public View getView(int i, View v, ViewGroup parent) {
             Object o = rows.get(i);
             boolean query = search.getText().length() > 0;
+            if (o instanceof Commands.Cmd) {
+                TextView t = (TextView) v;
+                if (t == null) { t = tv("", 18, FG); t.setMinHeight(px(52)); t.setGravity(Gravity.CENTER_VERTICAL); t.setPadding(px(4), 0, px(8), 0); t.setSingleLine(true); t.setEllipsize(TextUtils.TruncateAt.END); }
+                t.setText(commandLabel((Commands.Cmd) o, i == 1));
+                return t;
+            }
             if (o == SHOW_HIDDEN) {
                 TextView t = (TextView) v;
                 if (t == null) { t = tv("", 19, FG); t.setMinHeight(px(52)); t.setGravity(Gravity.CENTER_VERTICAL); t.setPadding(px(4), 0, px(8), 0); }
@@ -1272,7 +1557,8 @@ public class HudLauncher extends Activity {
             TextView t = (TextView) v;
             if (t == null) { t = tv("", 13, COMMENT); t.setPadding(px(4), px(14), 0, px(4)); }
             t.setText((String) o);
-            t.setTextColor(((String) o).startsWith("NO MATCH") ? COMMENT : BLUE);
+            String hs = (String) o;
+            t.setTextColor(hs.startsWith("NO MATCH") || hs.startsWith("UNKNOWN") ? COMMENT : BLUE);
             return t;
         }
     }

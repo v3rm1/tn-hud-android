@@ -295,7 +295,7 @@ public class SetWallpaper extends Activity {
         cdr.addView(chipItem("Style", null, "lnStyle", 0, new int[]{0, 1, 2, 3}, new String[]{"Text", "Icon + text", "Grid", "Icons only"}));
         cdr.addView(chipItem("Grid columns", "Grid and Icons only.", "lnCols", 4, new int[]{4, 5, 6}, new String[]{"4", "5", "6"}));
         cdr.addView(switchItem("TN-HUD icon frames", "The icon pack's octagon frame, applied here, so TN-HUD-Icons isn't needed for the drawer.", "lnIconFrame", true, null));
-        cdr.addView(chipItem("Icon colour", "Neon maps each icon onto a Tokyo Night blue-to-cyan ramp; the frame keeps its colour.", "lnIconTint", 0, new int[]{0, 1, 2}, new String[]{"Original", "Mono", "Neon"}));
+        cdr.addView(chipItem("Icon colour", "Neon redraws each icon as glowing tubes in its own colours; the frame keeps its colour.", "lnIconTint", 0, new int[]{0, 1, 2}, new String[]{"Original", "Mono", "Neon"}));
         divider(cdr);
         cdr.addView(switchItem("Frequent apps", "Top 5 at the start of the drawer, counted on this phone.", "lnFrequent", true, null));
         cdr.addView(switchItem("Search finds hidden apps", null, "lnSearchHidden", true, null));
@@ -430,6 +430,7 @@ public class SetWallpaper extends Activity {
         }
         LinearLayout pd = card("Data on this phone", null);
         pd.addView(permRow("Calendar", "Calendar module and next-event tile.", new String[]{"android.permission.READ_CALENDAR"}, "android.permission.READ_CALENDAR", 6));
+        pd.addView(permRow("Contacts", "Launcher command line: \"> call\" and \"> sms\" by contact name.", new String[]{"android.permission.READ_CONTACTS"}, "android.permission.READ_CONTACTS", 9));
         if (Build.VERSION.SDK_INT >= 29)
             pd.addView(permRow("Physical activity", "Step count on the lock screen.", new String[]{"android.permission.ACTIVITY_RECOGNITION"}, "android.permission.ACTIVITY_RECOGNITION", 5));
         if (Build.VERSION.SDK_INT >= 31)
