@@ -4,9 +4,10 @@ import android.content.SharedPreferences;
 
 /** launcher gesture -> action mapping, shared by the launcher and the settings app */
 final class Gestures {
-    static final int NONE = 0, DRAWER = 1, NOTIFICATIONS = 2, QUICK_SETTINGS = 3, TORCH = 4, CAMERA = 5, NEXT_TAB = 6, HUD_SETTINGS = 7, OPEN_APP = 8;
+    static final int NONE = 0, DRAWER = 1, NOTIFICATIONS = 2, QUICK_SETTINGS = 3, TORCH = 4, CAMERA = 5, NEXT_TAB = 6, HUD_SETTINGS = 7, OPEN_APP = 8,
+            HUD_NOTIFICATIONS = 9;
     static final String[] ACTION_NAMES = {"Nothing", "App drawer", "Notifications", "Quick settings", "Torch on / off", "Camera", "Next tab",
-            "HUD settings", "Open an app…"};
+            "HUD settings", "Open an app…", "HUD notification panel"};
 
     static final String SWIPE_UP = "up", DOWN_LEFT = "downL", DOWN_RIGHT = "downR", TWO_DOWN = "two", DOUBLE_TAP = "dbl", HOME_PRESS = "home";
     static final String[] KEYS = {SWIPE_UP, DOWN_LEFT, DOWN_RIGHT, TWO_DOWN, DOUBLE_TAP, HOME_PRESS};

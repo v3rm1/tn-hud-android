@@ -153,6 +153,7 @@ public final class HudRenderer {
         public int scN; public boolean scOn = true;
         public final String[] scLabel = new String[SCMAX];
         public final boolean[] scOk = new boolean[SCMAX];
+        public final int[] scBadge = new int[SCMAX];          // unread count from the companion app
         // v31: Kp forecast (3 h bins), hourly forecast strip, sky object info
         public double[] kpFcT, kpFcV;
         public long[] hrT; public float[] hrTemp, hrPop;
@@ -1132,7 +1133,8 @@ public final class HudRenderer {
             text(c, String.format(Locale.US, "%02d", i + 1), a + 18, y0 + 26, ok ? CYAN : COMMENT, 16);
             String l = d.scLabel[i] == null ? "--" : d.scLabel[i];
             textC(c, fit(l, 26, w - 36), (a + b) / 2, y1 - 26, ok ? FG : COMMENT, 26);
-            fill(ok ? BLUE : LINE); rect(c, b - 34, y0 + 14, b - 18, y0 + 18);         // HUD tick
+            if (d.scBadge[i] > 0) textR(c, "[" + (d.scBadge[i] > 99 ? "99+" : String.valueOf(d.scBadge[i])) + "]", b - 16, y0 + 28, CYAN, 20);
+            else { fill(ok ? BLUE : LINE); rect(c, b - 34, y0 + 14, b - 18, y0 + 18); }         // HUD tick
             tap(a, y0, b, y1, A_SHORTCUT, i);
         }
     }

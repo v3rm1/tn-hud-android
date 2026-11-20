@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  TN-HUD Link: optional companion holding notification access, so the main app never asks for it
+  (Play Protect blocks sideloaded apps that request notification access; install this one with adb or Shizuku).
+  Talks to TN-HUD Live only, through explicit broadcasts guarded by a signature permission: both APKs must be
+  signed with the same key.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.tokyonight.hud.link" android:versionCode="1" android:versionName="1.0">
+  <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="34"/>
+  <permission android:name="com.tokyonight.hud.permission.LINK" android:protectionLevel="signature"
+      android:label="TN-HUD link"/>
+  <uses-permission android:name="com.tokyonight.hud.permission.LINK"/>
+  <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY"/>
+  <queries>
+    <package android:name="com.tokyonight.hud.live"/>
+  </queries>
+  <application android:label="@string/app_name" android:icon="@drawable/ic_link" android:allowBackup="false">
+    <service android:name=".LinkListener" android:label="@string/app_name" android:exported="true"
+        android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+      <intent-filter><action android:name="android.service.notification.NotificationListenerService"/></intent-filter>
+    </service>
+    <receiver android:name=".LinkCmdRx" android:exported="true" android:permission="com.tokyonight.hud.permission.LINK">
+      <intent-filter><action android:name="com.tokyonight.hud.LINK_CMD"/></intent-filter>
+    </receiver>
+    <activity android:name=".LinkActivity" android:exported="true" android:theme="@android:style/Theme.Material.NoActionBar">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN"/>
+        <category android:name="android.intent.category.LAUNCHER"/>
+      </intent-filter>
+    </activity>
+  </application>
+</manifest>

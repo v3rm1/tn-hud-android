@@ -36,6 +36,13 @@ Built for a Galaxy S24 Ultra (1440×3120) but resolution independent. Android 8.
 - Glyphs: draw a letter on the home screen (W, M, V, N, Z, L, C, O, S, G, P, ✓, Λ) to open an app or run any gesture action; built-in shapes plus your own taught samples, neon trail with the recognised glyph
 - Widget slot: a HUD module that hosts one real app widget (e.g. Samsung Music for track info); choose it with a long-press on home
 
+**Notification link** (optional companion, `TN-HUD-Link.apk`)
+- Holds notification access so the main app never has to (Play Protect blocks that permission for sideloaded apps)
+- Unread badges in the drawer and on the shortcut row, track info and transport controls from any player (Samsung Music included)
+- HUD notification panel in the launcher (map it to a gesture): open / dismiss / clear all, torch, Do Not Disturb, Wi-Fi, internet, Bluetooth and volume panels
+- Talks only to TN-HUD Live, through a signature permission (both APKs must share the signing key); no internet permission
+- Install with `adb install TN-HUD-Link.apk` or Shizuku. Installed from a browser / file manager, Android greys out notification access until you use *App info › ⋮ › Allow restricted settings*
+
 **Screen saver** (Settings › Display › Screen saver → "TN-HUD · GNSS", charging only)
 - Sky plot of every GNSS satellite in view by constellation, C/N0 bars, dual-band flags, fix and TTFF
 - Voyager 1 / 2 distance and light-time
@@ -74,6 +81,7 @@ sdkmanager "platforms;android-23" "build-tools;34.0.0"
 export ANDROID_HOME=~/Library/Android/sdk     # macOS default; ~/Android/Sdk on Linux
 ./build.sh          # -> dist/TN-HUD-Live.apk
 ./build.sh icons    # -> dist/TN-HUD-Icons.apk
+./build.sh link     # -> dist/TN-HUD-Link.apk (notification companion)
 ./build.sh all
 ```
 
@@ -127,11 +135,15 @@ app/
     Sgp4.java, Sat.java  SGP4 propagator, look angles, visible-pass and Starlink-train detection
     SpaceWx.java         NOAA SWPC feeds, aurora verdict
     Alerts*.java         notifications, periodic job, pass alarms
+    Link*.java           receives the companion's state, sends it commands
+    HudBus.java          in-process hand-off between the wallpaper and the launcher (widget slot)
+    Glyph.java, Gestures.java  glyph recogniser, gesture / action mapping
     Backup.java, Shortcuts.java
   res/, assets/          resources, font, packed star catalogue
   stubs/                 compile-only API stubs (not packaged)
   shim/                  AWT shim + preview mains
   test/                  pure-Java checks
+link/                    TN-HUD Link: notification-listener companion (badges, media, notification panel)
 icons/                   icon pack (code-free APK: frame back / mask / upon at scale 0.92)
 docs/screenshots/
 third_party/             licenses of bundled third-party material

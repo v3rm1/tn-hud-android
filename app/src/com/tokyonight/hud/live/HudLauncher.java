@@ -2,6 +2,7 @@ package com.tokyonight.hud.live;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.PendingIntent;
 import android.app.WallpaperManager;
 import android.content.ComponentName;
 import android.content.Context;
@@ -110,16 +111,172 @@ public class HudLauncher extends Activity {
         awm = android.appwidget.AppWidgetManager.getInstance(this);
     }
 
+    final Link.Listener linkL = new Link.Listener() { public void onLink() {
+        if (drawer.getVisibility() == View.VISIBLE) adapter.notifyDataSetChanged();
+        if (panel != null && panel.getVisibility() == View.VISIBLE) fillPanel();
+    } };
+
     @Override protected void onStart() {
         super.onStart();
+        Link.listen(linkL, true);
+        if (Link.installed(this)) Link.send(this, "refresh", null, 0);
         try { host.startListening(); } catch (Throwable ignored) { }
         HudBus.listen(new HudBus.WidgetListener() { public void onWidgetRect(int[] r) { placeWidget(r); } });
     }
 
     @Override protected void onStop() {
+        Link.listen(linkL, false);
         HudBus.listen(null);
         try { host.stopListening(); } catch (Throwable ignored) { }
         super.onStop();
+    }
+
+    // ------------------------------------------------------------------ HUD notification panel (needs TN-HUD Link)
+    LinearLayout panel, toggles;
+    LinearLayout notes;
+    TextView pCount;
+
+    void buildPanel() {
+        panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setBackgroundColor(BG);
+        panel.setFitsSystemWindows(true);
+        panel.setPadding(px(20), px(12), px(20), 0);
+        LinearLayout top = new LinearLayout(this);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        top.addView(tv("// NOTIFICATIONS", 14, BLUE));
+        pCount = tv("", 14, COMMENT);
+        top.addView(pCount, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView clear = tv("CLEAR ALL", 14, BLUE); clear.setPadding(px(10), px(10), px(10), px(10));
+        clear.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { Link.send(HudLauncher.this, "clear", null, 0); } });
+        top.addView(clear);
+        TextView sys = tv("SYSTEM ▾", 14, COMMENT); sys.setPadding(px(10), px(10), 0, px(10));
+        sys.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { closePanel(); statusBar(false); } });
+        top.addView(sys);
+        panel.addView(top);
+        toggles = new LinearLayout(this);
+        toggles.setOrientation(LinearLayout.HORIZONTAL);
+        panel.addView(toggles, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(52)));
+        android.widget.ScrollView sv = new android.widget.ScrollView(this);
+        notes = new LinearLayout(this);
+        notes.setOrientation(LinearLayout.VERTICAL);
+        sv.addView(notes);
+        sv.setOnTouchListener(new View.OnTouchListener() {         // swipe up from the end of the list closes the panel
+            float y0;
+            public boolean onTouch(View v, MotionEvent e) {
+                android.widget.ScrollView s = (android.widget.ScrollView) v;
+                boolean atEnd = s.getChildCount() == 0 || s.getScrollY() + s.getHeight() >= s.getChildAt(0).getHeight() - 2;
+                if (e.getActionMasked() == MotionEvent.ACTION_DOWN) y0 = e.getRawY();
+                else if (e.getActionMasked() == MotionEvent.ACTION_UP && atEnd && y0 - e.getRawY() > 140 * dp) { closePanel(); return true; }
+                return false;
+            }
+        });
+        panel.addView(sv, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        panel.setVisibility(View.GONE);
+        root.addView(panel, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+    }
+
+    void openPanel() {
+        if (panel == null) buildPanel();
+        if (Link.installed(this)) Link.send(this, "refresh", null, 0);
+        fillPanel();
+        panel.setAlpha(0f); panel.setTranslationY(-80 * dp);
+        panel.setVisibility(View.VISIBLE);
+        panel.animate().alpha(1f).translationY(0).setDuration(160).start();
+        command("tnhud.drawer", 0, 0, 1);
+        if (wView != null) wView.setVisibility(View.GONE);
+    }
+
+    void closePanel() {
+        panel.animate().alpha(0f).translationY(-60 * dp).setDuration(120).withEndAction(new Runnable() {
+            public void run() { panel.setVisibility(View.GONE); placeWidget(lastRect); }
+        }).start();
+        command("tnhud.drawer", 0, 0, 0);
+    }
+
+    TextView chip(String label, boolean on, View.OnClickListener l) {
+        TextView t = tv(label, 13, on ? 0xFF000000 : FG);
+        t.setGravity(Gravity.CENTER);
+        GradientDrawable g = new GradientDrawable();
+        g.setColor(on ? CYAN : 0xFF0B0E17); g.setStroke(px(1), on ? CYAN : LINE);
+        t.setBackground(g);
+        t.setOnClickListener(l);
+        return t;
+    }
+
+    void addToggle(TextView t) {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, px(40), 1f);
+        lp.rightMargin = px(6); lp.topMargin = px(6);
+        toggles.addView(t, lp);
+    }
+
+    void fillPanel() {
+        toggles.removeAllViews();
+        addToggle(chip("TORCH", torchOn, new View.OnClickListener() { public void onClick(View v) { torch(); h.postDelayed(new Runnable() { public void run() { fillPanel(); } }, 250); } }));
+        final boolean dndOn = Link.live() && Link.dnd > 1;
+        addToggle(chip("DND", dndOn, new View.OnClickListener() { public void onClick(View v) {
+            if (Link.live()) Link.send(HudLauncher.this, "dnd", null, dndOn ? 1 : 2);
+            else openSettings();
+        } }));
+        addToggle(chip("WI-FI", false, panelIntent("android.settings.panel.action.WIFI")));
+        addToggle(chip("NET", false, panelIntent("android.settings.panel.action.INTERNET_CONNECTIVITY")));
+        addToggle(chip("BT", false, panelIntent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS)));
+        addToggle(chip("VOL", false, panelIntent("android.settings.panel.action.VOLUME")));
+        notes.removeAllViews();
+        if (!Link.installed(this) || !Link.live()) {
+            pCount.setText("");
+            TextView m = tv(!Link.installed(this) ? "INSTALL TN-HUD LINK TO SEE NOTIFICATIONS HERE.\n\nIT HOLDS NOTIFICATION ACCESS SO THIS APP DOESN'T HAVE TO. SEE HUD SETTINGS › PERMISSIONS."
+                    : "TN-HUD LINK IS INSTALLED BUT HAS NO NOTIFICATION ACCESS (OR HASN'T REPORTED YET).", 15, COMMENT);
+            m.setPadding(px(4), px(24), px(4), px(12));
+            notes.addView(m);
+            TextView open = tv("› OPEN HUD SETTINGS", 15, BLUE);
+            open.setPadding(px(4), px(8), px(4), px(8));
+            open.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { closePanel(); openSettings(); } });
+            notes.addView(open);
+            return;
+        }
+        int n = Link.nKey.length;
+        pCount.setText("  · " + n);
+        if (n == 0) { TextView m = tv("ALL CLEAR", 16, COMMENT); m.setPadding(px(4), px(24), 0, 0); notes.addView(m); }
+        long now = System.currentTimeMillis();
+        for (int k = 0; k < n; k++) {
+            final int i = k;
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.VERTICAL);
+            row.setPadding(px(10), px(10), px(10), px(10));
+            GradientDrawable g = new GradientDrawable(); g.setColor(0xFF0B0E17); g.setStroke(px(1), LINE);
+            row.setBackground(g);
+            long ago = Math.max(0, now - (i < Link.nWhen.length ? Link.nWhen[i] : now)) / 60000;
+            String when = ago < 1 ? "NOW" : ago < 60 ? ago + "M" : ago < 1440 ? (ago / 60) + "H" : (ago / 1440) + "D";
+            row.addView(tv(Link.nApp[i].toUpperCase(Locale.ROOT) + "  ·  " + when, 12, COMMENT));
+            if (Link.nTitle[i].length() > 0) row.addView(tv(Link.nTitle[i], 16, FG));
+            if (Link.nText[i].length() > 0) { TextView tx = tv(Link.nText[i], 14, 0xFFA9B1D6); tx.setMaxLines(3); tx.setEllipsize(android.text.TextUtils.TruncateAt.END); row.addView(tx); }
+            row.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
+                PendingIntent pi = i < Link.nIntent.length ? Link.nIntent[i] : null;
+                try {
+                    if (pi != null) pi.send();
+                    else startActivity(getPackageManager().getLaunchIntentForPackage(Link.nPkg[i]));
+                    if (i < Link.nClear.length && Link.nClear[i]) Link.send(HudLauncher.this, "dismiss", Link.nKey[i], 0);
+                    closePanel();
+                } catch (Throwable ignored) { }
+            } });
+            row.setOnLongClickListener(new View.OnLongClickListener() { public boolean onLongClick(View v) {
+                if (i < Link.nClear.length && Link.nClear[i]) { v.performHapticFeedback(0); v.animate().alpha(0f).translationX(v.getWidth()).setDuration(160).start(); Link.send(HudLauncher.this, "dismiss", Link.nKey[i], 0); }
+                return true;
+            } });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.topMargin = px(8);
+            notes.addView(row, lp);
+        }
+        TextView hint = tv("TAP OPENS · LONG-PRESS DISMISSES · SWIPE UP AT THE END CLOSES", 11, LINE);
+        hint.setPadding(px(4), px(14), 0, px(24));
+        notes.addView(hint);
+    }
+
+    View.OnClickListener panelIntent(final String action) {
+        return new View.OnClickListener() { public void onClick(View v) {
+            try { startActivity(new Intent(action)); } catch (Exception e) { statusBar(true); }
+        } };
     }
 
     // ------------------------------------------------------------------ hosted widget (stage 3)
@@ -232,12 +389,14 @@ public class HudLauncher extends Activity {
 
     @Override protected void onNewIntent(Intent i) {          // home pressed while we are in front
         super.onNewIntent(i);
-        if (drawer.getVisibility() == View.VISIBLE) closeDrawer();
+        if (panel != null && panel.getVisibility() == View.VISIBLE) closePanel();
+        else if (drawer.getVisibility() == View.VISIBLE) closeDrawer();
         else if (resumed && hasWindowFocus() && (i.getFlags() & Intent.FLAG_ACTIVITY_BROUGHT_TO_FRONT) == 0) run(Gestures.HOME_PRESS);   // already home
     }
 
     @Override public void onBackPressed() {
-        if (drawer.getVisibility() == View.VISIBLE) closeDrawer();
+        if (panel != null && panel.getVisibility() == View.VISIBLE) closePanel();
+        else if (drawer.getVisibility() == View.VISIBLE) closeDrawer();
     }
 
     @Override protected void onDestroy() {
@@ -367,13 +526,21 @@ public class HudLauncher extends Activity {
                 catch (Exception ignored) { }
                 break;
             case Gestures.NEXT_TAB: command("tnhud.page", 0, 0, 1); break;
-            case Gestures.HUD_SETTINGS: try { startActivity(new Intent(this, SetWallpaper.class)); } catch (Exception ignored) { } break;
+            case Gestures.HUD_SETTINGS: openSettings(); break;
+            case Gestures.HUD_NOTIFICATIONS: openPanel(); break;
             case Gestures.OPEN_APP: {
                 for (App x : apps) if (x.key.equals(appKey)) { launch(x); return; }
                 break;
             }
             default: break;
         }
+    }
+
+    /** the settings app runs in its own task (the launcher's task is the home task, which Android keeps separate) */
+    void openSettings() {
+        try { startActivity(new Intent(this, SetWallpaper.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)); }
+        catch (Exception ignored) { }
+        h.postDelayed(new Runnable() { public void run() { if (drawer.getVisibility() == View.VISIBLE) { drawer.setVisibility(View.GONE); hideKeyboard(); command("tnhud.drawer", 0, 0, 0); } } }, 300);
     }
 
     void statusBar(boolean qs) {
@@ -409,7 +576,7 @@ public class HudLauncher extends Activity {
             public void onClick(DialogInterface d, int w) {
                 String it = items[w];
                 try {
-                    if (it.startsWith("HUD")) startActivity(new Intent(HudLauncher.this, SetWallpaper.class));
+                    if (it.startsWith("HUD")) openSettings();
                     else if (it.startsWith("Choose")) pickWidget();
                     else if (it.startsWith("Remove")) removeWidget();
                     else if (it.startsWith("Home")) startActivity(new Intent(android.provider.Settings.ACTION_HOME_SETTINGS));
@@ -442,7 +609,11 @@ public class HudLauncher extends Activity {
         TextView title = tv("// APPS", 14, BLUE);
         top.addView(title);
         count = tv("", 14, COMMENT);
-        top.addView(count);
+        top.addView(count, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView set = tv("\u2699 HUD SETTINGS", 14, BLUE);
+        set.setPadding(px(12), px(10), px(12), px(10));
+        set.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { openSettings(); } });
+        top.addView(set);
         drawer.addView(top);
 
         search = new EditText(this);
@@ -789,7 +960,13 @@ public class HudLauncher extends Activity {
                 App a = (App) o;
                 if (t == null) { t = tv("", 19, FG); t.setMinHeight(px(52)); t.setGravity(Gravity.CENTER_VERTICAL); t.setPadding(px(4), 0, px(8), 0); }
                 boolean top = search.getText().length() > 0 && i == firstApp();
-                t.setText(a.label.toUpperCase(Locale.ROOT) + (a.work ? "  · WORK" : "") + (hidden(a) ? "  · HIDDEN" : ""));
+                String base = a.label.toUpperCase(Locale.ROOT) + (a.work ? "  · WORK" : "") + (hidden(a) ? "  · HIDDEN" : "");
+                int n = a.work ? 0 : Link.badge(a.cn.getPackageName());
+                if (n > 0 && sp.getBoolean("lkBadges", true)) {
+                    android.text.SpannableString ss = new android.text.SpannableString(base + "  [" + (n > 99 ? "99+" : String.valueOf(n)) + "]");
+                    ss.setSpan(new android.text.style.ForegroundColorSpan(CYAN), base.length(), ss.length(), 0);
+                    t.setText(ss);
+                } else t.setText(base);
                 t.setTextColor(top ? CYAN : FG);
             } else {
                 if (t == null) { t = tv("", 13, COMMENT); t.setPadding(px(4), px(14), 0, px(4)); }

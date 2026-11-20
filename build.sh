@@ -4,6 +4,7 @@
 #
 #   ./build.sh            # wallpaper app  -> dist/TN-HUD-Live.apk
 #   ./build.sh icons      # icon pack      -> dist/TN-HUD-Icons.apk
+#   ./build.sh link       # notification companion -> dist/TN-HUD-Link.apk
 #   ./build.sh all
 #
 # Environment (defaults in brackets):
@@ -76,9 +77,21 @@ build_icons() {
   sign build/icons.apk dist/TN-HUD-Icons.apk
 }
 
+build_link() {
+  rm -rf build/lclasses build/ldex && mkdir -p build/lclasses build/ldex
+  javac -nowarn -source 8 -target 8 -bootclasspath "$AJ" -d build/lclasses $(find link/src -name '*.java')
+  if [ -n "$D8" ]; then "$D8" --min-api 26 --lib "$AJ" --output build/ldex $(find build/lclasses -name '*.class')
+  else "$DX" --dex --output=build/ldex/classes.dex build/lclasses; fi
+  rm -f build/link.apk
+  "$AAPT" package -f -M link/AndroidManifest.xml -S link/res -I "$AJ" -F build/link.apk
+  (cd build/ldex && "$AAPT" add ../link.apk classes.dex >/dev/null)
+  sign build/link.apk dist/TN-HUD-Link.apk
+}
+
 case "${1:-app}" in
   app) build_app ;;
   icons) build_icons ;;
-  all) build_app; build_icons ;;
-  *) echo "usage: $0 [app|icons|all]"; exit 1 ;;
+  link) build_link ;;
+  all) build_app; build_icons; build_link ;;
+  *) echo "usage: $0 [app|icons|link|all]"; exit 1 ;;
 esac

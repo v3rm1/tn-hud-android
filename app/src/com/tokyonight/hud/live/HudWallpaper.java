@@ -255,6 +255,12 @@ public class HudWallpaper extends WallpaperService {
         }
 
         void updateMedia() {
+            if (Link.mediaActive()) {                          // companion: real metadata from any player's media session
+                d.mAccess = true; d.mActive = true; d.mPlaying = Link.mState == 3;
+                d.mTitle = Link.mTitle; d.mArtist = Link.mArtist; d.mApp = Link.mApp == null ? null : Link.mApp.toUpperCase(Locale.US);
+                d.mDur = Link.mDur; mPosBase = Link.mPos; mPosAt = Link.mPosAt; mSpeed = Link.mState == 3 ? Link.mSpeed : 0f;
+                return;
+            }
             boolean musicActive = false;
             try { musicActive = ((AudioManager) getSystemService(Context.AUDIO_SERVICE)).isMusicActive(); } catch (Throwable ignored) { }
             long now = SystemClock.elapsedRealtime();
@@ -995,6 +1001,21 @@ public class HudWallpaper extends WallpaperService {
             return false;
         }
 
+        final Link.Listener linkL = new Link.Listener() { public void onLink() {
+            updateMedia(); scBadges();
+            if (visible) frame();
+        } };
+
+        void scBadges() {
+            for (int i = 0; i < HudRenderer.Data.SCMAX; i++) {
+                String p = scPkg[i];
+                if (Shortcuts.DIAL.equals(p)) {
+                    try { p = ((android.telecom.TelecomManager) getSystemService(Context.TELECOM_SERVICE)).getDefaultDialerPackage(); } catch (Throwable t) { p = null; }
+                }
+                d.scBadge[i] = Link.badge(p);
+            }
+        }
+
         void loadShortcuts(SharedPreferences sp) {
             String[][] e = Shortcuts.load(sp);
             d.scOn = sp.getBoolean("scOn", true);
@@ -1004,6 +1025,7 @@ public class HudWallpaper extends WallpaperService {
                 d.scLabel[i] = i < e.length ? e[i][1] : null;
                 d.scOk[i] = i < e.length && (Shortcuts.DIAL.equals(e[i][0]) || app(e[i][0]) != null);
             }
+            scBadges();
         }
 
         int[] ints(String csv) {
@@ -1172,6 +1194,8 @@ public class HudWallpaper extends WallpaperService {
         @Override public void onCreate(SurfaceHolder sh) {
             setTouchEventsEnabled(true);
             if (!isPreview()) Alerts.ensureJob(HudWallpaper.this);
+            Link.listen(linkL, true);
+            if (Link.installed(HudWallpaper.this)) Link.send(HudWallpaper.this, "refresh", null, 0);
             try {
                 java.io.InputStream in = getAssets().open("stars.bin");
                 java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
@@ -1203,6 +1227,7 @@ public class HudWallpaper extends WallpaperService {
         }
 
         @Override public void onDestroy() {
+            Link.listen(linkL, false);
             h.removeCallbacks(tick);
             setSensors(false);
             setViz(false);
@@ -1646,10 +1671,17 @@ public class HudWallpaper extends WallpaperService {
                     if (!launch(new Intent("com.samsung.android.sm.ACTION_RAM")) && !launch(app("com.samsung.android.lool")))
                         launch(new Intent(android.provider.Settings.ACTION_DEVICE_INFO_SETTINGS));
                     break;
-                case HudRenderer.A_MEDIA_PREV: mediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS); break;
-                case HudRenderer.A_MEDIA_PLAY: mediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE); d.mPlaying = !d.mPlaying; break;
-                case HudRenderer.A_MEDIA_NEXT: mediaKey(android.view.KeyEvent.KEYCODE_MEDIA_NEXT); break;
+                case HudRenderer.A_MEDIA_PREV:
+                    if (Link.mediaActive()) Link.send(HudWallpaper.this, "media", "prev", 0); else mediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS);
+                    break;
+                case HudRenderer.A_MEDIA_PLAY:
+                    if (Link.mediaActive()) Link.send(HudWallpaper.this, "media", "toggle", 0); else mediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE);
+                    d.mPlaying = !d.mPlaying; break;
+                case HudRenderer.A_MEDIA_NEXT:
+                    if (Link.mediaActive()) Link.send(HudWallpaper.this, "media", "next", 0); else mediaKey(android.view.KeyEvent.KEYCODE_MEDIA_NEXT);
+                    break;
                 case HudRenderer.A_MUSIC_APP:
+                    if (Link.mPkg != null && Link.live() && launch(app(Link.mPkg))) break;
                     if (!("SPOTIFY".equals(d.mApp) && launch(app("com.spotify.music")))) launch(app("com.sec.android.app.music"));
                     break;
                 case HudRenderer.A_NOTE_NEW: shareTo("com.samsung.android.app.notes"); break;

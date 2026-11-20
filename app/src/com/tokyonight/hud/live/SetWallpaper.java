@@ -393,6 +393,29 @@ public class SetWallpaper extends Activity {
         if (Build.VERSION.SDK_INT >= 29)
             pl.addView(permRow("All the time", "The wallpaper and screen saver run in the background. Android opens its own page for this one.",
                     new String[]{"android.permission.ACCESS_BACKGROUND_LOCATION"}, "android.permission.ACCESS_BACKGROUND_LOCATION", 4));
+        // ---- companion: notification access lives in a separate app
+        LinearLayout lk = card("Notification link", "Badges, track info from any player (Samsung Music too), media controls, the HUD notification panel and Do Not Disturb need notification access. Play Protect blocks that for sideloaded apps, so it lives in a tiny companion, TN-HUD Link, which only talks to this app (same signing key) and has no internet access.");
+        final TextView lkState = text("", 14, onSurfaceVar, true);
+        lk.addView(lkState);
+        onResumeHooks.add(new Runnable() { public void run() {
+            boolean inst = Link.installed(SetWallpaper.this);
+            if (inst) Link.send(SetWallpaper.this, "refresh", null, 0);
+            String st = !inst ? "TN-HUD Link not installed"
+                    : Link.live() ? "\u2713 Linked \u00B7 last update " + ago(System.currentTimeMillis() - Link.at) + " ago"
+                    : Link.at > 0 && !Link.access ? "Installed \u00B7 notification access not granted" : "Installed \u00B7 waiting for it to report";
+            lkState.setText(st);
+            lkState.setTextColor(Link.live() ? primary : inst ? error : onSurfaceVar);
+        } });
+        LinearLayout rlk = row();
+        rlk.addView(button("Open TN-HUD Link", 1, new View.OnClickListener() { public void onClick(View v) {
+            Intent i = getPackageManager().getLaunchIntentForPackage(Link.PKG);
+            if (i != null) startActivity(i);
+            else { try { startActivity(new Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/v3rm1/tn-hud-android/releases"))); } catch (Exception ignored) { } }
+        } }));
+        lk.addView(rlk);
+        lk.addView(body("Install: adb install TN-HUD-Link.apk from a computer, or through Shizuku. Installed from a browser or file manager, Android greys out notification access: App info \u203A \u22EE \u203A Allow restricted settings, then grant it in TN-HUD Link."));
+        lk.addView(switchItem("Badges", "Unread counts in the app drawer and on the shortcut row.", "lkBadges", true, null));
+
         if (Build.VERSION.SDK_INT >= 33) {
             LinearLayout pn = card("Notifications", null);
             pn.addView(permRow("Notifications", "Sky alerts (aurora, storms, satellite passes).", new String[]{"android.permission.POST_NOTIFICATIONS"}, "android.permission.POST_NOTIFICATIONS", 8));
