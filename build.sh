@@ -66,7 +66,10 @@ build_app() {
     "$DX" --dex --output=build/dex/classes.dex build/classes
   else echo "missing d8/dx"; exit 1; fi
   rm -f build/app.apk
-  "$AAPT" package -f -M app/AndroidManifest.xml -S app/res -A app/assets -I "$AJ" -F build/app.apk -0 ttf
+  rm -rf build/assets && mkdir -p build/assets/frame
+  cp -R app/assets/. build/assets/
+  cp icons/res/drawable-nodpi/iconback.png icons/res/drawable-nodpi/iconmask.png icons/res/drawable-nodpi/iconupon.png build/assets/frame/   # launcher icon frames, single source
+  "$AAPT" package -f -M app/AndroidManifest.xml -S app/res -A build/assets -I "$AJ" -F build/app.apk -0 ttf
   (cd build/dex && "$AAPT" add ../app.apk classes.dex >/dev/null)
   sign build/app.apk dist/TN-HUD-Live.apk
 }

@@ -214,45 +214,6 @@ public class SetWallpaper extends Activity {
             sp.edit().remove("order_" + editView).apply(); fillHomeList(homeList); } }));
         ca.addView(ra);
 
-        // ---- launcher
-        LinearLayout cln = card("Launcher", "Use the HUD as your home app: it owns the touches (no icons in the way), swipe left / right changes tabs, swipe up opens a text-only app drawer with search, long-press for this menu. The lock screen stays the live wallpaper, so keep TN-HUD set as wallpaper too.");
-        final TextView lnState = text("", 14, onSurfaceVar, true);
-        cln.addView(lnState);
-        onResumeHooks.add(new Runnable() { public void run() {
-            Intent hi = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
-            android.content.pm.ResolveInfo ri = getPackageManager().resolveActivity(hi, 0);
-            boolean ours = ri != null && ri.activityInfo != null && getPackageName().equals(ri.activityInfo.packageName);
-            lnState.setText(ours ? "\u2713 TN-HUD is your home app" : "Not the home app");
-            lnState.setTextColor(ours ? primary : onSurfaceVar);
-        } });
-        LinearLayout rln = row();
-        rln.addView(button("Choose home app", 1, new View.OnClickListener() { public void onClick(View v) {
-            try { startActivity(new Intent(android.provider.Settings.ACTION_HOME_SETTINGS)); }
-            catch (Exception e) { try { startActivity(new Intent(android.provider.Settings.ACTION_SETTINGS)); } catch (Exception ignored) { } }
-        } }));
-        cln.addView(rln);
-        divider(cln);
-        cln.addView(text("Gestures", 16, onSurface, false));
-        cln.addView(body("Notifications and quick settings open Android's own panels; not every phone lets apps do that, in which case the swipe from the status bar still works."));
-        for (int gi = 0; gi < Gestures.KEYS.length; gi++) cln.addView(gestureItem(gi));
-        divider(cln);
-
-        // ---- glyphs
-        LinearLayout cg = card("Glyphs", "Draw a letter on the home screen to run an action. Bent strokes are read as glyphs, straight ones stay swipes. The letters work out of the box; \u201cTeach\u201d adds your own handwriting (up to 5 samples each).");
-        cg.addView(switchItem("Glyph gestures", null, "lnGlyphs", true, null));
-        cg.addView(switchItem("Show the trail", "Neon trace of your finger and the recognised glyph.", "lnTrail", true, null));
-        divider(cg);
-        for (String gl : Glyph.NAMES) cg.addView(glyphItem(gl));
-        cln.addView(switchItem("Frequent apps", "Top 5 at the start of the drawer, counted on this phone.", "lnFrequent", true, null));
-        cln.addView(switchItem("Search finds hidden apps", null, "lnSearchHidden", true, null));
-        LinearLayout rln2 = row();
-        rln2.addView(button("Unhide all apps", 2, new View.OnClickListener() { public void onClick(View v) {
-            SharedPreferences.Editor e = sp.edit();
-            for (String k : sp.getAll().keySet()) if (k.startsWith("lh_")) e.remove(k);
-            e.apply();
-        } }));
-        cln.addView(rln2);
-
         // ---- taps
         LinearLayout ck = card("Taps", "The HUD sits under your icons, so taps can land on it by accident. Taps are ignored after you swipe up to the app drawer, until you swipe down, go back or go home.");
         ck.addView(switchItem("HUD taps", "Off: the wallpaper ignores touches completely (view tabs too).", "hudTaps", true, null));
@@ -309,6 +270,53 @@ public class SetWallpaper extends Activity {
         c4.addView(switchItem("Live sensors", "Magnetometer, barometer, light, motion graphs. Only while the Sensors module is on screen.", "motion", true, null));
         divider(c4);
         c4.addView(textSizeItem("textScale", 0, new int[]{0, 85, 100, 115, 125}, "System"));
+
+        // ================================================================ launcher
+        page(host, "Launcher", "Home app, app drawer, gestures and glyphs");
+        LinearLayout cln = card("Home app", "Use the HUD as your home app: it owns the touches (no icons in the way), swipe left / right changes tabs, swipe up opens the app drawer with search, long-press for the menu. The lock screen stays the live wallpaper, so keep TN-HUD set as wallpaper too.");
+        final TextView lnState = text("", 14, onSurfaceVar, true);
+        cln.addView(lnState);
+        onResumeHooks.add(new Runnable() { public void run() {
+            Intent hi = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
+            android.content.pm.ResolveInfo ri = getPackageManager().resolveActivity(hi, 0);
+            boolean ours = ri != null && ri.activityInfo != null && getPackageName().equals(ri.activityInfo.packageName);
+            lnState.setText(ours ? "\u2713 TN-HUD is your home app" : "Not the home app");
+            lnState.setTextColor(ours ? primary : onSurfaceVar);
+        } });
+        LinearLayout rln = row();
+        rln.addView(button("Choose home app", 1, new View.OnClickListener() { public void onClick(View v) {
+            try { startActivity(new Intent(android.provider.Settings.ACTION_HOME_SETTINGS)); }
+            catch (Exception e) { try { startActivity(new Intent(android.provider.Settings.ACTION_SETTINGS)); } catch (Exception ignored) { } }
+        } }));
+        cln.addView(rln);
+
+        // ---- app drawer
+        LinearLayout cdr = card("App drawer", "Swipe up (by default). The search field is focused with the keyboard up; Enter opens the top match.");
+        cdr.addView(chipItem("Style", null, "lnStyle", 0, new int[]{0, 1, 2, 3}, new String[]{"Text", "Icon + text", "Grid", "Icons only"}));
+        cdr.addView(chipItem("Grid columns", "Grid and Icons only.", "lnCols", 4, new int[]{4, 5, 6}, new String[]{"4", "5", "6"}));
+        cdr.addView(switchItem("TN-HUD icon frames", "The icon pack's octagon frame, applied here, so TN-HUD-Icons isn't needed for the drawer.", "lnIconFrame", true, null));
+        cdr.addView(chipItem("Icon colour", "Neon maps each icon onto Tokyo Night cyan; the frame keeps its colour.", "lnIconTint", 0, new int[]{0, 1, 2}, new String[]{"Original", "Mono", "Neon"}));
+        divider(cdr);
+        cdr.addView(switchItem("Frequent apps", "Top 5 at the start of the drawer, counted on this phone.", "lnFrequent", true, null));
+        cdr.addView(switchItem("Search finds hidden apps", null, "lnSearchHidden", true, null));
+        LinearLayout rln2 = row();
+        rln2.addView(button("Unhide all apps", 2, new View.OnClickListener() { public void onClick(View v) {
+            SharedPreferences.Editor e = sp.edit();
+            for (String k : sp.getAll().keySet()) if (k.startsWith("lh_")) e.remove(k);
+            e.apply();
+        } }));
+        cdr.addView(rln2);
+
+        // ---- gestures
+        LinearLayout cgs = card("Gestures", "Notifications and quick settings open Android's own panels; not every phone lets apps do that, in which case the swipe from the status bar still works.");
+        for (int gi = 0; gi < Gestures.KEYS.length; gi++) cgs.addView(gestureItem(gi));
+
+        // ---- glyphs
+        LinearLayout cg = card("Glyphs", "Draw a letter on the home screen to run an action. Bent strokes are read as glyphs, straight ones stay swipes. The letters work out of the box; \u201cTeach\u201d adds your own handwriting (up to 5 samples each).");
+        cg.addView(switchItem("Glyph gestures", null, "lnGlyphs", true, null));
+        cg.addView(switchItem("Show the trail", "Neon trace of your finger and the recognised glyph.", "lnTrail", true, null));
+        divider(cg);
+        for (String gl : Glyph.NAMES) cg.addView(glyphItem(gl));
 
         // ================================================================ lock
         page(host, "Lock screen", "Space weather, sky events and tiles");
@@ -373,7 +381,7 @@ public class SetWallpaper extends Activity {
         LinearLayout c4b = card("TN-HUD · GNSS", "Charging-only HUD: a live sky plot of every navigation satellite in view (GPS, Galileo, GLONASS, BeiDou, QZSS), their signal strengths, dual-band status, and the Voyagers' distance and light-time. GPS runs only while it is showing.");
         c4b.addView(body("Needs precise location to read satellite status, and possibly “all the time”: Android may treat a screen saver as a background app. Both are on the Permissions tab."));
         LinearLayout r4p = row();
-        r4p.addView(button("Permissions", 2, new View.OnClickListener() { public void onClick(View v) { select(3); } }));
+        r4p.addView(button("Permissions", 2, new View.OnClickListener() { public void onClick(View v) { select(4); } }));
         c4b.addView(r4p);
         LinearLayout r4b = row();
         r4b.addView(button("Screen saver settings", 1, new View.OnClickListener() { public void onClick(View v) {
@@ -492,11 +500,12 @@ public class SetWallpaper extends Activity {
         final LinearLayout nav = new LinearLayout(this);
         nav.setOrientation(LinearLayout.HORIZONTAL);
         nav.setBackgroundColor(surf);
-        String[] lab = {"Home", "Lock", "Dream", "Permissions", "About"};
+        String[] lab = {"Home", "Launcher", "Lock", "Dream", "Permissions", "About"};
+        int[] icon = {0, 5, 1, 2, 3, 4};
         navItems.clear();
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < lab.length; i++) {
             final int k = i;
-            View it = navItem(lab[i], i, new View.OnClickListener() { public void onClick(View v) { select(k); } });
+            View it = navItem(lab[i], icon[i], new View.OnClickListener() { public void onClick(View v) { select(k); } });
             nav.addView(it, new LinearLayout.LayoutParams(0, px(80), 1f));
         }
         root.addView(nav, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -517,7 +526,10 @@ public class SetWallpaper extends Activity {
         };
         sp.registerOnSharedPreferenceChangeListener(prefL);
         setContentView(root);
-        select(Math.max(0, Math.min(4, sp.getInt("uiTab", 0))));
+        if (sp.getInt("uiTabV", 0) < 2) {                          // v36 inserted the Launcher tab at 1
+            int t = sp.getInt("uiTab", 0); sp.edit().putInt("uiTab", t >= 1 ? t + 1 : t).putInt("uiTabV", 2).apply();
+        }
+        select(Math.max(0, Math.min(pageViews.size() - 1, sp.getInt("uiTab", 0))));
         for (Runnable r : onResumeHooks) r.run();
     }
 
@@ -815,6 +827,10 @@ public class SetWallpaper extends Activity {
         it.addView(ind, new LinearLayout.LayoutParams(px(64), px(32)));
         TextView t = text(label, 12, onSurfaceVar, true);
         t.setGravity(Gravity.CENTER);
+        t.setSingleLine(true);
+        float avail = getResources().getDisplayMetrics().widthPixels / 6f - px(4);   // six destinations: shrink long labels to fit
+        float w = t.getPaint().measureText(label);
+        if (w > avail) t.setTextSize(TypedValue.COMPLEX_UNIT_PX, t.getTextSize() * avail / w);
         t.setPadding(0, px(4), 0, 0);
         it.addView(t, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         it.setOnClickListener(l);
@@ -824,7 +840,7 @@ public class SetWallpaper extends Activity {
         return it;
     }
 
-    /** hand-drawn 24 dp icons (outlined when inactive, filled when active, as M3 does): home, lock, dream, about */
+    /** hand-drawn 24 dp icons (outlined when inactive, filled when active, as M3 does): home, lock, dream, permissions, about, launcher */
     static final class NavIcon extends View {
         final int kind; int col, hole; boolean filled;
         final Paint pa = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -862,6 +878,11 @@ public class SetWallpaper extends Activity {
                 android.graphics.Path ck = new android.graphics.Path();
                 ck.moveTo(8.8f, 12); ck.lineTo(11.2f, 14.4f); ck.lineTo(15.4f, 9.8f);
                 c.drawPath(ck, pa);
+            } else if (kind == 5) {                                      // launcher: 2x2 app grid
+                c.drawRoundRect(new RectF(4, 4, 10.5f, 10.5f), 1.5f, 1.5f, pa);
+                c.drawRoundRect(new RectF(13.5f, 4, 20, 10.5f), 1.5f, 1.5f, pa);
+                c.drawRoundRect(new RectF(4, 13.5f, 10.5f, 20), 1.5f, 1.5f, pa);
+                c.drawRoundRect(new RectF(13.5f, 13.5f, 20, 20), 1.5f, 1.5f, pa);
             } else {                                                     // about: info
                 c.drawCircle(12, 12, 9, pa);
                 pa.setColor(filled ? hole : col);

@@ -31,8 +31,9 @@ Built for a Galaxy S24 Ultra (1440×3120) but resolution independent. Android 8.
 - The HUD becomes the home screen and owns the touches: no icons over it, no misfires from the app drawer
 - Swipe left / right changes tabs, long-press for the menu
 - Remappable gestures: swipe up, swipe down (left / right side), two-finger swipe down, double tap, home button while home → app drawer, notifications, quick settings, torch, camera, next tab, HUD settings or any app
-- Swipe up: text-only drawer with the search field focused and the keyboard up; Enter opens the top match (or searches the web), A–Z rail, frequent apps (launches decayed over ~2 weeks), rename / hide / app info / uninstall, hidden apps behind a "show hidden" row, work-profile apps tagged
+- Swipe up: app drawer as a text list, icon + text list, or icon grid with or without labels (4–6 columns, original / mono / neon icons), search field focused and the keyboard up; Enter opens the top match (or searches the web), A–Z rail, frequent apps (launches decayed over ~2 weeks), rename / hide / app info / uninstall, hidden apps behind a "show hidden" row, work-profile apps tagged
 - App shortcuts (new chat, compose, …) at the top of an app's long-press menu
+- Its own *Launcher* tab in the settings app: home app, drawer style, gestures and glyphs
 - Glyphs: draw a letter on the home screen (W, M, V, N, Z, L, C, O, S, G, P, ✓, Λ) to open an app or run any gesture action; built-in shapes plus your own taught samples, neon trail with the recognised glyph
 - Widget slot: a HUD module that hosts one real app widget (e.g. Samsung Music for track info); choose it with a long-press on home
 

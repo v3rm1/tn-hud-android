@@ -11,11 +11,23 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.LauncherActivityInfo;
 import android.content.pm.LauncherApps;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.ColorMatrix;
+import android.graphics.ColorMatrixColorFilter;
+import android.graphics.Paint;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffXfermode;
+import android.graphics.RectF;
 import android.graphics.Rect;
 import android.graphics.Typeface;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.StateListDrawable;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -23,6 +35,7 @@ import android.os.UserHandle;
 import android.os.UserManager;
 import android.text.Editable;
 import android.text.InputType;
+import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -38,6 +51,7 @@ import android.widget.AbsListView;
 import android.widget.BaseAdapter;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.TextView;
@@ -54,7 +68,7 @@ import java.util.Locale;
  * this activity is a transparent shell over it that owns the touches:
  *   tap            -> forwarded to the wallpaper ("tnhud.tap") so HUD targets work exactly as before
  *   swipe left/right -> previous / next HUD tab ("tnhud.page")
- *   swipe up       -> text-only app drawer, search field focused, keyboard up
+ *   swipe up       -> app drawer (text list, icon list or icon grid), search field focused, keyboard up
  *   swipe down     -> notifications (left part of the screen) / quick settings (right part)
  *   long press     -> launcher menu
  * Swipe up / down, two-finger swipe down, double tap and the home button (while home) are remappable (Gestures).
@@ -79,7 +93,7 @@ public class HudLauncher extends Activity {
     final AppAdapter adapter = new AppAdapter();
 
     static final class App {
-        String label, sortKey, key; ComponentName cn; UserHandle user; boolean work; int launches;
+        String label, sortKey, key; ComponentName cn; UserHandle user; boolean work; int launches; LauncherActivityInfo info;
         float score; long last;                                   // frecency: launches decayed with a 14-day time constant
         float now(long t) { return last == 0 ? 0 : score * (float) Math.exp(-(t - last) / (14 * 86400000.0)); }
     }
@@ -401,6 +415,7 @@ public class HudLauncher extends Activity {
 
     @Override protected void onDestroy() {
         try { la.unregisterCallback(appsChanged); } catch (Throwable ignored) { }
+        iconExec.shutdownNow();
         super.onDestroy();
     }
 
@@ -637,16 +652,11 @@ public class HudLauncher extends Activity {
             public void onTextChanged(CharSequence s, int a, int b, int c) { }
             public void afterTextChanged(Editable s) { filter(); }
         });
-        search.setOnEditorActionListener(new TextView.OnEditorActionListener() {
-            public boolean onEditorAction(TextView v, int id, KeyEvent ev) {
-                for (Object o : rows) if (o instanceof App) { launch((App) o); return true; }
-                return true;
-            }
-        });
+        search.setOnEditorActionListener(openTop);
 
         LinearLayout body = new LinearLayout(this);
         body.setOrientation(LinearLayout.HORIZONTAL);
-        list = new ListView(this);
+        list = new DrawerList(this);
         list.setDivider(null);
         list.setSelector(new android.graphics.drawable.ColorDrawable(0x22_7AA2F7));
         list.setVerticalScrollBarEnabled(false);
@@ -664,14 +674,6 @@ public class HudLauncher extends Activity {
                 Object o = rows.get(pos);
                 if (o instanceof App) appMenu((App) o);
                 return true;
-            }
-        });
-        list.setOnTouchListener(new View.OnTouchListener() {         // pull down at the top closes the drawer
-            float y0; boolean atTop;
-            public boolean onTouch(View v, MotionEvent e) {
-                if (e.getActionMasked() == MotionEvent.ACTION_DOWN) { y0 = e.getRawY(); atTop = listAtTop(); }
-                else if (e.getActionMasked() == MotionEvent.ACTION_UP && atTop && e.getRawY() - y0 > 120 * dp) { closeDrawer(); return true; }
-                return false;
             }
         });
         list.setOnScrollListener(new AbsListView.OnScrollListener() {
@@ -707,6 +709,8 @@ public class HudLauncher extends Activity {
         showHidden = false;
         search.setText("");
         filter();
+        checkIconSig();
+        if (sp.getInt("lnStyle", 0) > 0) prefetchIcons();
         drawer.setAlpha(0f); drawer.setTranslationY(80 * dp);
         drawer.setVisibility(View.VISIBLE);
         drawer.animate().alpha(1f).translationY(0).setDuration(160).start();
@@ -751,7 +755,7 @@ public class HudLauncher extends Activity {
             try { L = la.getActivityList(null, u); } catch (Throwable t) { continue; }
             for (LauncherActivityInfo i : L) {
                 App a = new App();
-                a.cn = i.getComponentName(); a.user = u; a.work = !u.equals(me);
+                a.cn = i.getComponentName(); a.user = u; a.work = !u.equals(me); a.info = i;
                 a.key = a.cn.flattenToShortString() + "#" + (um != null ? um.getSerialNumberForUser(u) : 0);
                 String custom = sp.getString("ln_" + a.key, null);
                 a.label = custom != null ? custom : String.valueOf(i.getLabel());
@@ -765,6 +769,7 @@ public class HudLauncher extends Activity {
         }
         final Collator col = Collator.getInstance();
         Collections.sort(apps, new Comparator<App>() { public int compare(App x, App y) { return col.compare(x.label, y.label); } });
+        iconGen++; icons.evictAll(); iconPending.clear();          // package changes may come with new icons
         filter();
     }
 
@@ -821,6 +826,19 @@ public class HudLauncher extends Activity {
             visible = m.size();
             if (m.isEmpty()) rows.add("NO MATCH · ENTER SEARCHES THE WEB");
         }
+        style = Math.max(0, Math.min(3, sp.getInt("lnStyle", 0)));
+        cols = Math.max(3, Math.min(6, sp.getInt("lnCols", 4)));
+        if (style >= 2) {                                         // grid: runs of apps become rows of 'cols' cells
+            ArrayList<Object> g = new ArrayList<Object>();
+            ArrayList<App> run = new ArrayList<App>();
+            for (Object o : rows) {
+                if (o instanceof App) { run.add((App) o); if (run.size() == cols) { g.add(run.toArray(new App[0])); run.clear(); } continue; }
+                if (!run.isEmpty()) { g.add(run.toArray(new App[0])); run.clear(); }
+                g.add(o);
+            }
+            if (!run.isEmpty()) g.add(run.toArray(new App[0]));
+            rows.clear(); rows.addAll(g);
+        }
         count.setText("  · " + visible);
         adapter.notifyDataSetChanged();
         list.setSelection(0);
@@ -837,7 +855,8 @@ public class HudLauncher extends Activity {
 
     final TextView.OnEditorActionListener openTop = new TextView.OnEditorActionListener() {
         public boolean onEditorAction(TextView v, int id, KeyEvent ev) {
-            for (Object o : rows) if (o instanceof App) { launch((App) o); return true; }
+            App a = topApp();
+            if (a != null) launch(a);
             return true;
         }
     };
@@ -940,42 +959,317 @@ public class HudLauncher extends Activity {
                 .setNegativeButton("Cancel", null).show();
     }
 
+    // ------------------------------------------------------------------ drawer styles and icons
+    static final int ST_TEXT = 0, ST_LIST = 1, ST_GRID = 2, ST_GRID_BARE = 3;
+    int style, cols = 4;
+
+    /** pull down at the top closes the drawer; done in dispatch so it also works when a grid cell took the DOWN */
+    final class DrawerList extends ListView {
+        float y0; boolean atTop;
+        DrawerList(Context c) { super(c); }
+        @Override public boolean dispatchTouchEvent(MotionEvent e) {
+            if (e.getActionMasked() == MotionEvent.ACTION_DOWN) { y0 = e.getRawY(); atTop = listAtTop(); }
+            else if (e.getActionMasked() == MotionEvent.ACTION_UP && atTop && e.getRawY() - y0 > 120 * dp) {
+                MotionEvent c = MotionEvent.obtain(e); c.setAction(MotionEvent.ACTION_CANCEL); super.dispatchTouchEvent(c); c.recycle();
+                closeDrawer(); return true;
+            }
+            return super.dispatchTouchEvent(e);
+        }
+    }
+
+    /** icons are rendered once to bitmaps (shareable between the frequent row and the A-Z list), off the main thread */
+    final android.util.LruCache<String, Bitmap> icons = new android.util.LruCache<String, Bitmap>(
+            (int) Math.min(64L << 20, Runtime.getRuntime().maxMemory() / 6)) {
+        @Override protected int sizeOf(String k, Bitmap b) { return b.getByteCount(); }
+    };
+    final java.util.HashSet<String> iconPending = new java.util.HashSet<String>();
+    final java.util.concurrent.ExecutorService iconExec = java.util.concurrent.Executors.newSingleThreadExecutor();
+    int iconGen;
+
+    int iconPx() { return px(52); }
+
+    void loadIcon(final App a, final ImageView into) {
+        if (a.info == null || !iconPending.add(a.key)) return;
+        final int gen = iconGen, size = iconPx(), dpi = getResources().getDisplayMetrics().densityDpi;
+        final boolean frame = iconSigFrame;
+        final ColorMatrixColorFilter tint = iconFilter();
+        final LauncherActivityInfo info = a.info;
+        final boolean work = a.work;
+        iconExec.execute(new Runnable() { public void run() {
+            Bitmap bm = null;
+            try { bm = renderIcon(info.getBadgedIcon(dpi), size, frame && loadFrames(), tint, work); } catch (Throwable ignored) { }
+            final Bitmap fb = bm;
+            h.post(new Runnable() { public void run() {
+                if (gen != iconGen) return;
+                iconPending.remove(a.key);
+                if (fb == null) return;
+                icons.put(a.key, fb);
+                if (into != null && a.key.equals(into.getTag())) into.setImageBitmap(fb);
+                else if (into == null && drawer.getVisibility() == View.VISIBLE) refreshSoon();
+            } });
+        } });
+    }
+
+    // ---- TN-HUD icon frames (same art and ADW rules as TN-HUD-Icons: back, icon at 0.92 cut by the mask, upon)
+    static final float FRAME_SCALE = 0.92f;
+    Bitmap fBack, fMask, fUpon;
+    boolean framesTried;
+
+    /** worker thread only */
+    boolean loadFrames() {
+        if (!framesTried) {
+            framesTried = true;
+            try {
+                fBack = BitmapFactory.decodeStream(getAssets().open("frame/iconback.png"));
+                fMask = BitmapFactory.decodeStream(getAssets().open("frame/iconmask.png"));
+                fUpon = BitmapFactory.decodeStream(getAssets().open("frame/iconupon.png"));
+            } catch (Exception e) { fBack = fMask = fUpon = null; }
+        }
+        return fBack != null && fMask != null && fUpon != null;
+    }
+
+    /** adaptive icons are drawn full-bleed (both layers, no system mask) inside a frame, so the octagon is the only shape */
+    static boolean drawFullBleed(Drawable d, Canvas c, RectF r, Paint p) {
+        if (Build.VERSION.SDK_INT < 26 || d == null || !"android.graphics.drawable.AdaptiveIconDrawable".equals(d.getClass().getName())) return false;
+        try {
+            Drawable bg = (Drawable) d.getClass().getMethod("getBackground").invoke(d);
+            Drawable fg = (Drawable) d.getClass().getMethod("getForeground").invoke(d);
+            float pad = r.width() * 0.25f;                        // 108 dp layers around the 72 dp safe-zone viewport
+            int l = Math.round(r.left - pad), t = Math.round(r.top - pad), rr = Math.round(r.right + pad), bb = Math.round(r.bottom + pad);
+            int n = c.saveLayer(r, p, Canvas.ALL_SAVE_FLAG);
+            c.clipRect(r);
+            if (bg != null) { bg.setBounds(l, t, rr, bb); bg.draw(c); }
+            if (fg != null) { fg.setBounds(l, t, rr, bb); fg.draw(c); }
+            c.restoreToCount(n);
+            return true;
+        } catch (Throwable e) { return false; }
+    }
+
+    Bitmap renderIcon(Drawable d, int size, boolean frame, ColorMatrixColorFilter tint, boolean work) {
+        if (d == null) return null;
+        Bitmap out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(out);
+        Paint ip = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+        ip.setColorFilter(tint);
+        if (!frame) {
+            int n = c.saveLayer(0, 0, size, size, ip, Canvas.ALL_SAVE_FLAG);
+            d.setBounds(0, 0, size, size); d.draw(c);
+            c.restoreToCount(n);
+            return out;
+        }
+        RectF full = new RectF(0, 0, size, size);
+        Paint fp = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+        c.drawBitmap(fBack, null, full, fp);
+        Bitmap layer = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        Canvas lc = new Canvas(layer);
+        float in = size * (1 - FRAME_SCALE) / 2;
+        RectF ir = new RectF(in, in, size - in, size - in);
+        if (work || !drawFullBleed(d, lc, ir, ip)) {               // keep the work badge: draw the badged icon as is
+            int n = lc.saveLayer(ir, ip, Canvas.ALL_SAVE_FLAG);
+            d.setBounds(Math.round(ir.left), Math.round(ir.top), Math.round(ir.right), Math.round(ir.bottom)); d.draw(lc);
+            lc.restoreToCount(n);
+        }
+        Paint mp = new Paint(Paint.FILTER_BITMAP_FLAG);
+        mp.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.DST_OUT));    // opaque mask pixels cut the icon
+        lc.drawBitmap(fMask, null, full, mp);
+        c.drawBitmap(layer, 0, 0, fp);
+        layer.recycle();
+        c.drawBitmap(fUpon, null, full, fp);
+        return out;
+    }
+
+    boolean iconSigFrame; int iconSigTint = -1;
+    /** frame / colour changes re-render every icon */
+    void checkIconSig() {
+        boolean f = sp.getBoolean("lnIconFrame", true);
+        int t = sp.getInt("lnIconTint", 0);
+        if (f != iconSigFrame || t != iconSigTint) { iconSigFrame = f; iconSigTint = t; iconGen++; icons.evictAll(); iconPending.clear(); }
+    }
+
+    final Runnable refresh = new Runnable() { public void run() { adapter.notifyDataSetChanged(); } };
+    void refreshSoon() { h.removeCallbacks(refresh); h.postDelayed(refresh, 120); }
+
+    void prefetchIcons() { for (App a : apps) if (icons.get(a.key) == null && !hidden(a)) loadIcon(a, null); }
+
+    void bindIcon(ImageView iv, App a) {
+        iv.setTag(a.key);
+        Bitmap b = icons.get(a.key);
+        iv.setImageBitmap(b);
+        if (b == null) loadIcon(a, iv);
+    }
+
+    ColorMatrixColorFilter monoF, neonF;
+    /** icon colour: 0 original, 1 mono, 2 neon (luminance mapped onto Tokyo Night cyan) */
+    ColorMatrixColorFilter iconFilter() {
+        int m = sp.getInt("lnIconTint", 0);
+        if (m == 1) {
+            if (monoF == null) { ColorMatrix cm = new ColorMatrix(); cm.setSaturation(0); monoF = new ColorMatrixColorFilter(cm); }
+            return monoF;
+        }
+        if (m == 2) {
+            if (neonF == null) {
+                float r = 0.2126f, g = 0.7152f, b = 0.0722f, cr = 0x7D / 255f, cg = 0xCF / 255f, cb = 1f;
+                neonF = new ColorMatrixColorFilter(new ColorMatrix(new float[]{
+                        r * cr, g * cr, b * cr, 0, 0,
+                        r * cg, g * cg, b * cg, 0, 0,
+                        r * cb, g * cb, b * cb, 0, 0,
+                        0, 0, 0, 1, 0}));
+            }
+            return neonF;
+        }
+        return null;
+    }
+
+    String badgeText(App a) {
+        int n = a.work ? 0 : Link.badge(a.cn.getPackageName());
+        if (n <= 0 || !sp.getBoolean("lkBadges", true)) return null;
+        return n > 99 ? "99+" : String.valueOf(n);
+    }
+
+    CharSequence rowLabel(App a) {
+        String base = a.label.toUpperCase(Locale.ROOT) + (a.work ? "  · WORK" : "") + (hidden(a) ? "  · HIDDEN" : "");
+        String b = badgeText(a);
+        if (b == null) return base;
+        android.text.SpannableString ss = new android.text.SpannableString(base + "  [" + b + "]");
+        ss.setSpan(new android.text.style.ForegroundColorSpan(CYAN), base.length(), ss.length(), 0);
+        return ss;
+    }
+
+    StateListDrawable pressBg(boolean top) {
+        StateListDrawable sl = new StateListDrawable();
+        sl.addState(new int[]{android.R.attr.state_pressed}, new android.graphics.drawable.ColorDrawable(0x337AA2F7));
+        if (top) { GradientDrawable g = new GradientDrawable(); g.setColor(0x147DCFFF); g.setStroke(px(1), CYAN); sl.addState(new int[0], g); }
+        return sl;
+    }
+
+    static final int T_TEXT = 0, T_HEAD = 1, T_ICON = 2, T_GRID = 3, T_HIDDEN = 4;
+
     final class AppAdapter extends BaseAdapter {
         public int getCount() { return rows.size(); }
         public Object getItem(int i) { return rows.get(i); }
         public long getItemId(int i) { return i; }
-        public int getViewTypeCount() { return 2; }
-        public int getItemViewType(int i) { return rows.get(i) instanceof App || rows.get(i) == SHOW_HIDDEN ? 0 : 1; }
+        public int getViewTypeCount() { return 5; }
+        public int getItemViewType(int i) {
+            Object o = rows.get(i);
+            if (o == SHOW_HIDDEN) return T_HIDDEN;
+            if (o instanceof App) return style == ST_LIST ? T_ICON : T_TEXT;
+            if (o instanceof App[]) return T_GRID;
+            return T_HEAD;
+        }
         public boolean isEnabled(int i) { return rows.get(i) instanceof App || rows.get(i) == SHOW_HIDDEN; }
+
         public View getView(int i, View v, ViewGroup parent) {
             Object o = rows.get(i);
-            TextView t = (TextView) v;
+            boolean query = search.getText().length() > 0;
             if (o == SHOW_HIDDEN) {
+                TextView t = (TextView) v;
                 if (t == null) { t = tv("", 19, FG); t.setMinHeight(px(52)); t.setGravity(Gravity.CENTER_VERTICAL); t.setPadding(px(4), 0, px(8), 0); }
-                t.setText(showHidden ? "\u2212 HIDE HIDDEN APPS" : "+ SHOW " + hiddenCount + " HIDDEN APP" + (hiddenCount > 1 ? "S" : ""));
+                t.setText(showHidden ? "− HIDE HIDDEN APPS" : "+ SHOW " + hiddenCount + " HIDDEN APP" + (hiddenCount > 1 ? "S" : ""));
                 t.setTextColor(COMMENT);
                 return t;
             }
+            if (o instanceof App && style == ST_LIST) {
+                App a = (App) o;
+                LinearLayout r = (LinearLayout) v;
+                if (r == null) {
+                    r = new LinearLayout(HudLauncher.this);
+                    r.setGravity(Gravity.CENTER_VERTICAL);
+                    r.setMinimumHeight(px(56));
+                    r.setPadding(px(2), 0, px(8), 0);
+                    ImageView iv = new ImageView(HudLauncher.this);
+                    iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                    r.addView(iv, new LinearLayout.LayoutParams(px(36), px(36)));
+                    TextView t = tv("", 18, FG);
+                    t.setSingleLine(true); t.setEllipsize(TextUtils.TruncateAt.END);
+                    t.setPadding(px(14), 0, 0, 0);
+                    r.addView(t, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+                }
+                bindIcon((ImageView) r.getChildAt(0), a);
+                TextView t = (TextView) r.getChildAt(1);
+                t.setText(rowLabel(a));
+                t.setTextColor(query && i == firstApp() ? CYAN : FG);
+                return r;
+            }
             if (o instanceof App) {
                 App a = (App) o;
+                TextView t = (TextView) v;
                 if (t == null) { t = tv("", 19, FG); t.setMinHeight(px(52)); t.setGravity(Gravity.CENTER_VERTICAL); t.setPadding(px(4), 0, px(8), 0); }
-                boolean top = search.getText().length() > 0 && i == firstApp();
-                String base = a.label.toUpperCase(Locale.ROOT) + (a.work ? "  · WORK" : "") + (hidden(a) ? "  · HIDDEN" : "");
-                int n = a.work ? 0 : Link.badge(a.cn.getPackageName());
-                if (n > 0 && sp.getBoolean("lkBadges", true)) {
-                    android.text.SpannableString ss = new android.text.SpannableString(base + "  [" + (n > 99 ? "99+" : String.valueOf(n)) + "]");
-                    ss.setSpan(new android.text.style.ForegroundColorSpan(CYAN), base.length(), ss.length(), 0);
-                    t.setText(ss);
-                } else t.setText(base);
-                t.setTextColor(top ? CYAN : FG);
-            } else {
-                if (t == null) { t = tv("", 13, COMMENT); t.setPadding(px(4), px(14), 0, px(4)); }
-                t.setText((String) o);
-                t.setTextColor(((String) o).startsWith("NO MATCH") ? COMMENT : BLUE);
+                t.setText(rowLabel(a));
+                t.setTextColor(query && i == firstApp() ? CYAN : FG);
+                return t;
             }
+            if (o instanceof App[]) return gridRow((App[]) o, (LinearLayout) v, query && i == firstApp());
+            TextView t = (TextView) v;
+            if (t == null) { t = tv("", 13, COMMENT); t.setPadding(px(4), px(14), 0, px(4)); }
+            t.setText((String) o);
+            t.setTextColor(((String) o).startsWith("NO MATCH") ? COMMENT : BLUE);
             return t;
         }
     }
 
-    int firstApp() { for (int i = 0; i < rows.size(); i++) if (rows.get(i) instanceof App) return i; return -1; }
+    /** one grid row: 'cols' equal cells, each icon (+ badge) over an optional one-line label */
+    View gridRow(final App[] cells, LinearLayout r, boolean firstIsTop) {
+        boolean labels = style == ST_GRID;
+        if (r == null || r.getChildCount() != cols || !Boolean.valueOf(labels).equals(r.getTag())) {
+            r = new LinearLayout(HudLauncher.this);
+            r.setTag(labels);
+            r.setPadding(0, px(4), px(4), px(4));
+            for (int k = 0; k < cols; k++) {
+                LinearLayout cell = new LinearLayout(this);
+                cell.setOrientation(LinearLayout.VERTICAL);
+                cell.setGravity(Gravity.CENTER_HORIZONTAL);
+                cell.setPadding(px(2), px(8), px(2), px(labels ? 6 : 8));
+                FrameLayout box = new FrameLayout(this);
+                ImageView iv = new ImageView(this);
+                iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                int is = cols >= 6 ? 44 : cols == 5 ? 48 : 52;
+                box.addView(iv, new FrameLayout.LayoutParams(px(is), px(is), Gravity.CENTER));
+                TextView bd = tv("", 10, 0xFF000000);
+                GradientDrawable bg = new GradientDrawable(); bg.setColor(CYAN); bg.setCornerRadius(px(2));
+                bd.setBackground(bg);
+                bd.setPadding(px(4), 0, px(4), 0);
+                bd.setGravity(Gravity.CENTER);
+                box.addView(bd, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, px(15), Gravity.TOP | Gravity.END));
+                cell.addView(box, new LinearLayout.LayoutParams(px(is + 12), px(is + 6)));
+                TextView t = tv("", cols >= 6 ? 10 : 11, FG);
+                t.setSingleLine(true); t.setEllipsize(TextUtils.TruncateAt.END);
+                t.setGravity(Gravity.CENTER);
+                t.setPadding(0, px(4), 0, 0);
+                t.setVisibility(labels ? View.VISIBLE : View.GONE);
+                cell.addView(t, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                r.addView(cell, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            }
+        }
+        for (int k = 0; k < cols; k++) {
+            LinearLayout cell = (LinearLayout) r.getChildAt(k);
+            FrameLayout box = (FrameLayout) cell.getChildAt(0);
+            ImageView iv = (ImageView) box.getChildAt(0);
+            TextView bd = (TextView) box.getChildAt(1), t = (TextView) cell.getChildAt(1);
+            if (k >= cells.length) {
+                cell.setVisibility(View.INVISIBLE); cell.setOnClickListener(null); cell.setOnLongClickListener(null); cell.setClickable(false);
+                iv.setTag(null);
+                continue;
+            }
+            final App a = cells[k];
+            cell.setVisibility(View.VISIBLE);
+            bindIcon(iv, a);
+            String b = badgeText(a);
+            bd.setText(b == null ? "" : b); bd.setVisibility(b == null ? View.GONE : View.VISIBLE);
+            t.setText(a.label.toUpperCase(Locale.ROOT));
+            t.setTextColor(a.work ? BLUE : hidden(a) ? COMMENT : FG);
+            iv.setAlpha(hidden(a) ? 0.45f : 1f);
+            cell.setBackground(pressBg(firstIsTop && k == 0));
+            cell.setContentDescription(a.label + (b == null ? "" : ", " + b + " unread"));
+            cell.setOnClickListener(new View.OnClickListener() { public void onClick(View x) { launch(a); } });
+            cell.setOnLongClickListener(new View.OnLongClickListener() { public boolean onLongClick(View x) { x.performHapticFeedback(0); appMenu(a); return true; } });
+        }
+        return r;
+    }
+
+    App topApp() {
+        for (Object o : rows) { if (o instanceof App) return (App) o; if (o instanceof App[] && ((App[]) o).length > 0) return ((App[]) o)[0]; }
+        return null;
+    }
+
+    int firstApp() { for (int i = 0; i < rows.size(); i++) if (rows.get(i) instanceof App || rows.get(i) instanceof App[]) return i; return -1; }
 }
