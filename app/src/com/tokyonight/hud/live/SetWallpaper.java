@@ -58,16 +58,17 @@ public class SetWallpaper extends Activity {
     TextView cityStatus, locStatus;
     final ArrayList<Runnable> onResumeHooks = new ArrayList<Runnable>();
 
-    static final String[] MOD_NAME = {"Clock", "Weather", "Device", "Sky", "Sensors", "Calendar", "Search", "To-do", "Notes", "Media"};
+    static final String[] MOD_NAME = {"Clock", "Weather", "Device", "Sky", "Sensors", "Calendar", "Search", "To-do", "Notes", "Media", "Widget"};
     static final String[] MOD_SUB = {"Time, date, next alarm", "Conditions, high/low, wind, humidity",
             "Battery, RAM, storage, diagnostics, linked devices, network", "Sky map, stars, Moon, planets, day length",
             "24 h cycle dial, magnetometer, barometer, light, motion graphs", "Day agenda, week and month; tap events to open them",
             "Search bar under the header; opens Google search, mic for voice",
             "(retired)", "Shortcuts: new Samsung note, new Keep note, open the apps",
-            "Now playing (when the player broadcasts it) with previous / play-pause / next"};
+            "Now playing (when the player broadcasts it) with previous / play-pause / next",
+            "A real app widget (e.g. Samsung Music) hosted by the TN-HUD launcher; choose it with a long-press on home"};
     static final boolean[][] DEF_MODS = {
-            {true, true, true, true, true, false, false, false, false, false}, {true, true, true, false, false, false, true, false, false, true},
-            {true, true, false, true, true, false, false, false, false, false}, {true, true, false, false, false, true, false, false, true, false}};
+            {true, true, true, true, true, false, false, false, false, false, false}, {true, true, true, false, false, false, true, false, false, true, false},
+            {true, true, false, true, true, false, false, false, false, false, false}, {true, true, false, false, false, true, false, false, true, false, false}};
 
     @Override protected void onCreate(Bundle b) {
         boolean night = (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
@@ -235,6 +236,13 @@ public class SetWallpaper extends Activity {
         cln.addView(body("Notifications and quick settings open Android's own panels; not every phone lets apps do that, in which case the swipe from the status bar still works."));
         for (int gi = 0; gi < Gestures.KEYS.length; gi++) cln.addView(gestureItem(gi));
         divider(cln);
+
+        // ---- glyphs
+        LinearLayout cg = card("Glyphs", "Draw a letter on the home screen to run an action. Bent strokes are read as glyphs, straight ones stay swipes. The letters work out of the box; \u201cTeach\u201d adds your own handwriting (up to 5 samples each).");
+        cg.addView(switchItem("Glyph gestures", null, "lnGlyphs", true, null));
+        cg.addView(switchItem("Show the trail", "Neon trace of your finger and the recognised glyph.", "lnTrail", true, null));
+        divider(cg);
+        for (String gl : Glyph.NAMES) cg.addView(glyphItem(gl));
         cln.addView(switchItem("Frequent apps", "Top 5 at the start of the drawer, counted on this phone.", "lnFrequent", true, null));
         cln.addView(switchItem("Search finds hidden apps", null, "lnSearchHidden", true, null));
         LinearLayout rln2 = row();
@@ -496,7 +504,7 @@ public class SetWallpaper extends Activity {
     int editView;
     SharedPreferences.OnSharedPreferenceChangeListener prefL;
     static final String[] CMOD_SUB = {"", "", "Battery, RAM, storage, diagnostics", "Star map, Moon, planets", "24 h dial, sensor lab",
-            "Day / week / month", "Google search bar", "", "Samsung Notes and Keep shortcuts", "Media controls"};
+            "Day / week / month", "Google search bar", "", "Samsung Notes and Keep shortcuts", "Media controls", "Hosted app widget (launcher only)"};
 
     void paintViewChips(TextView[] c) {
         for (int v = 0; v < 4; v++) {
@@ -1012,6 +1020,100 @@ public class SetWallpaper extends Activity {
         dlg.show();
     }
 
+    /** glyph row: big letter, assigned action (tap to change), Teach / Clear */
+    View glyphItem(final String g) {
+        LinearLayout r = new LinearLayout(this);
+        r.setOrientation(LinearLayout.HORIZONTAL);
+        r.setGravity(Gravity.CENTER_VERTICAL);
+        r.setMinimumHeight(px(56));
+        TextView big = text(g, 26, primary, false);
+        big.setTypeface(Typeface.MONOSPACE);
+        big.setGravity(Gravity.CENTER);
+        r.addView(big, new LinearLayout.LayoutParams(px(48), ViewGroup.LayoutParams.WRAP_CONTENT));
+        LinearLayout tx = new LinearLayout(this); tx.setOrientation(LinearLayout.VERTICAL);
+        final TextView v = text("", 16, onSurface, false);
+        final TextView n = text("", 12, onSurfaceVar, false);
+        tx.addView(v); tx.addView(n);
+        r.addView(tx, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        final Runnable paint = new Runnable() { public void run() {
+            int a = Gestures.glyphAction(sp, g);
+            String s = Gestures.ACTION_NAMES[a];
+            if (a == Gestures.OPEN_APP) {
+                String k = Gestures.glyphApp(sp, g);
+                s = "Open " + (k == null ? "(no app chosen)" : appLabel(k.substring(0, k.indexOf('/') > 0 ? k.indexOf('/') : k.length()), k));
+            }
+            v.setText(s); v.setTextColor(a == Gestures.NONE ? onSurfaceVar : onSurface);
+            int c = Glyph.taught(sp, g).size();
+            n.setText(c == 0 ? "built-in shape" : "built-in + " + c + " of your samples");
+        } };
+        paint.run();
+        tx.setBackground(ripple(new ColorDrawable(Color.TRANSPARENT), 8, onSurface));
+        tx.setClickable(true);
+        tx.setOnClickListener(new View.OnClickListener() { public void onClick(View x) {
+            new android.app.AlertDialog.Builder(SetWallpaper.this, dark ? android.R.style.Theme_Material_Dialog_Alert : android.R.style.Theme_Material_Light_Dialog_Alert)
+                    .setTitle("Glyph " + g)
+                    .setSingleChoiceItems(Gestures.ACTION_NAMES, Gestures.glyphAction(sp, g), new android.content.DialogInterface.OnClickListener() {
+                        public void onClick(android.content.DialogInterface d, int w) {
+                            d.dismiss();
+                            if (w == Gestures.OPEN_APP) pickGestureApp("gm_" + g, paint);
+                            else { sp.edit().putInt("gm_" + g, w).apply(); paint.run(); }
+                        }
+                    }).setNegativeButton("Cancel", null).show();
+        } });
+        r.addView(button("Teach", 2, new View.OnClickListener() { public void onClick(View x) { teachGlyph(g, paint); } }));
+        return r;
+    }
+
+    /** drawing pad: each stroke becomes a sample; shows what the recogniser currently reads */
+    void teachGlyph(final String g, final Runnable done) {
+        final android.app.Dialog dlg = new android.app.Dialog(this);
+        dlg.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setBackground(shape(surfHigh, 28, 0, 0));
+        box.setPadding(px(24), px(24), px(24), px(16));
+        box.addView(text("Teach " + g, 24, onSurface, false));
+        final TextView st = text("Draw " + g + " in the box, the way you'd draw it on the home screen. Each stroke is saved.", 14, onSurfaceVar, false);
+        st.setPadding(0, px(8), 0, px(12));
+        box.addView(st);
+        final View pad = new View(this) {
+            final android.graphics.Path path = new android.graphics.Path();
+            final Paint pa = new Paint(Paint.ANTI_ALIAS_FLAG);
+            final ArrayList<float[]> pts = new ArrayList<float[]>();
+            @Override protected void onDraw(Canvas c) {
+                pa.setStyle(Paint.Style.STROKE); pa.setStrokeWidth(4 * dp); pa.setColor(primary); pa.setStrokeCap(Paint.Cap.ROUND); pa.setStrokeJoin(Paint.Join.ROUND);
+                c.drawPath(path, pa);
+            }
+            @Override public boolean onTouchEvent(android.view.MotionEvent e) {
+                switch (e.getActionMasked()) {
+                    case android.view.MotionEvent.ACTION_DOWN: path.reset(); pts.clear(); path.moveTo(e.getX(), e.getY()); pts.add(new float[]{e.getX(), e.getY()}); getParent().requestDisallowInterceptTouchEvent(true); break;
+                    case android.view.MotionEvent.ACTION_MOVE: path.lineTo(e.getX(), e.getY()); pts.add(new float[]{e.getX(), e.getY()}); break;
+                    case android.view.MotionEvent.ACTION_UP:
+                        float[] v = Glyph.vector(pts);
+                        if (v != null && Glyph.pathLen(pts) > 60 * dp) {
+                            Object[] before = Glyph.recognise(sp, pts);
+                            Glyph.teach(sp, g, v);
+                            st.setText(String.format(Locale.US, "Saved (%d). Before this sample it read: %s (%.2f)", Glyph.taught(sp, g).size(),
+                                    before[0] == null ? "nothing" : before[0], (Float) before[1]));
+                        } else st.setText("Too short; draw it bigger.");
+                        break;
+                }
+                invalidate();
+                return true;
+            }
+        };
+        pad.setBackground(shape(surface, 16, outlineVar, 1));
+        box.addView(pad, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(280)));
+        LinearLayout actions = new LinearLayout(this); actions.setGravity(Gravity.END);
+        actions.addView(button("Clear samples", 2, new View.OnClickListener() { public void onClick(View v) { sp.edit().remove("gt_" + g).apply(); st.setText("Samples cleared; the built-in shape remains."); } }));
+        actions.addView(button("Done", 2, new View.OnClickListener() { public void onClick(View v) { dlg.dismiss(); } }));
+        box.addView(actions);
+        dlg.setContentView(box);
+        dlg.setOnDismissListener(new android.content.DialogInterface.OnDismissListener() { public void onDismiss(android.content.DialogInterface d) { done.run(); } });
+        if (dlg.getWindow() != null) dlg.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        dlg.show();
+    }
+
     /** launcher gesture row: name, current action; tap to pick an action (and an app for "Open an app…") */
     View gestureItem(final int gi) {
         final String g = Gestures.KEYS[gi];
@@ -1041,7 +1143,7 @@ public class SetWallpaper extends Activity {
                     .setSingleChoiceItems(Gestures.ACTION_NAMES, Gestures.get(sp, g), new android.content.DialogInterface.OnClickListener() {
                         public void onClick(android.content.DialogInterface d, int w) {
                             d.dismiss();
-                            if (w == Gestures.OPEN_APP) pickGestureApp(g, paint);
+                            if (w == Gestures.OPEN_APP) pickGestureApp("lg_" + g, paint);
                             else { sp.edit().putInt("lg_" + g, w).apply(); paint.run(); }
                         }
                     }).setNegativeButton("Cancel", null).show();
@@ -1049,7 +1151,7 @@ public class SetWallpaper extends Activity {
         return r;
     }
 
-    void pickGestureApp(final String g, final Runnable done) {
+    void pickGestureApp(final String key, final Runnable done) {
         android.content.pm.LauncherApps la = (android.content.pm.LauncherApps) getSystemService(Context.LAUNCHER_APPS_SERVICE);
         android.os.UserManager um = (android.os.UserManager) getSystemService(Context.USER_SERVICE);
         android.os.UserHandle me = android.os.Process.myUserHandle();
@@ -1063,7 +1165,7 @@ public class SetWallpaper extends Activity {
                 .setTitle("Open which app?")
                 .setItems(names, new android.content.DialogInterface.OnClickListener() {
                     public void onClick(android.content.DialogInterface d, int w) {
-                        sp.edit().putInt("lg_" + g, Gestures.OPEN_APP).putString("lg_" + g + "_app", items.get(w)[0]).apply();
+                        sp.edit().putInt(key, Gestures.OPEN_APP).putString(key + "_app", items.get(w)[0]).apply();
                         done.run();
                     }
                 }).setNegativeButton("Cancel", null).show();

@@ -32,7 +32,9 @@ Built for a Galaxy S24 Ultra (1440×3120) but resolution independent. Android 8.
 - Swipe left / right changes tabs, long-press for the menu
 - Remappable gestures: swipe up, swipe down (left / right side), two-finger swipe down, double tap, home button while home → app drawer, notifications, quick settings, torch, camera, next tab, HUD settings or any app
 - Swipe up: text-only drawer with the search field focused and the keyboard up; Enter opens the top match (or searches the web), A–Z rail, frequent apps (launches decayed over ~2 weeks), rename / hide / app info / uninstall, hidden apps behind a "show hidden" row, work-profile apps tagged
-- Planned: app shortcuts on long-press, drawn glyph gestures (W → WhatsApp), hosted widgets
+- App shortcuts (new chat, compose, …) at the top of an app's long-press menu
+- Glyphs: draw a letter on the home screen (W, M, V, N, Z, L, C, O, S, G, P, ✓, Λ) to open an app or run any gesture action; built-in shapes plus your own taught samples, neon trail with the recognised glyph
+- Widget slot: a HUD module that hosts one real app widget (e.g. Samsung Music for track info); choose it with a long-press on home
 
 **Screen saver** (Settings › Display › Screen saver → "TN-HUD · GNSS", charging only)
 - Sky plot of every GNSS satellite in view by constellation, C/N0 bars, dual-band flags, fix and TTFF

@@ -829,6 +829,7 @@ public class HudWallpaper extends WallpaperService {
             d.nightDim = sp.getBoolean("nightDim", true);
             d.nightDimAmt = Math.max(30, Math.min(70, sp.getInt("nightDimPct", 40))) / 100f;
             d.noDock = launcherMode || sp.getBoolean("noDock", false);
+            d.widgetLabel = sp.getInt("wgId", -1) >= 0 ? sp.getString("wgLabel", "WIDGET") : null;
             loadShortcuts(sp);
             d.splitPages = sp.getBoolean("splitPages", true);
             for (int col = 0; col < 4; col++)
@@ -1395,6 +1396,7 @@ public class HudWallpaper extends WallpaperService {
 
         @Override public void onVisibilityChanged(boolean v) {
             visible = v;
+            if (!v && !isPreview()) HudBus.widget(null);
             if (v && zoom < 0.02f) drawerOpen = false;            // back on home after an app (launched from the drawer or not)
             if (!v) {
                 h.removeCallbacks(tick);
@@ -1419,8 +1421,10 @@ public class HudWallpaper extends WallpaperService {
             if (!isPreview() && "android.wallpaper.keyguardgoingaway".equals(action) && mode == HudRenderer.LOCKED) startUnlock();
             // TN-HUD launcher: it owns the touches and forwards them; while it is in front, raw touches are ignored
             if ("tnhud.launcher".equals(action)) {
-                launcherMode = z == 1; launcherAt = System.currentTimeMillis();
-                if (launcherMode) { drawerOpen = false; d.noDock = true; } else d.noDock = getSharedPreferences("hud", Context.MODE_PRIVATE).getBoolean("noDock", false);
+                launcherMode = z == 1; launcherAt = System.currentTimeMillis(); d.launcherMode = launcherMode;
+                SharedPreferences lsp = getSharedPreferences("hud", Context.MODE_PRIVATE);
+                if (launcherMode) { drawerOpen = false; d.noDock = true; } else d.noDock = lsp.getBoolean("noDock", false);
+                d.widgetLabel = lsp.getInt("wgId", -1) >= 0 ? lsp.getString("wgLabel", "WIDGET") : null;
                 if (visible && mode == HudRenderer.STATIC) frame();
             }
             if ("tnhud.drawer".equals(action)) { launcherDrawer = z == 1; }
@@ -1444,8 +1448,8 @@ public class HudWallpaper extends WallpaperService {
         int lastTapX, lastTapY, pendAct = -1;
         boolean cmdTap, launcherMode, launcherDrawer; long launcherAt;
         final boolean[][] DEF_MODS = {
-            {true, true, true, true, true, false, false, false, false, false}, {true, true, true, false, false, false, true, false, false, true},
-            {true, true, false, true, true, false, false, false, false, false}, {true, true, false, false, false, true, false, false, true, false}};
+            {true, true, true, true, true, false, false, false, false, false, false}, {true, true, true, false, false, false, true, false, false, true, false},
+            {true, true, false, true, true, false, false, false, false, false, false}, {true, true, false, false, false, true, false, false, true, false, false}};
         int offPages = 1, offPage, vPage;
         float tdx, tdy; long tdt;
 
@@ -1753,6 +1757,8 @@ public class HudWallpaper extends WallpaperService {
                 if (red) c.saveLayer(null, redPaint());
                 r.draw(c, m, clock, u, d);
                 if (red) c.restore();
+                boolean show = m == HudRenderer.STATIC && r.wgShown && launcherMode && !isPreview();
+                HudBus.widget(show ? new int[]{r.wgL, r.wgT, r.wgR, r.wgB} : null);
             }
             finally {
                 frameNs += System.nanoTime() - ft; frames++;

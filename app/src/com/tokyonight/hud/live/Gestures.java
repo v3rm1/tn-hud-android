@@ -26,4 +26,8 @@ final class Gestures {
 
     static int get(SharedPreferences sp, String g) { return sp.getInt("lg_" + g, def(sp, g)); }
     static String app(SharedPreferences sp, String g) { return sp.getString("lg_" + g + "_app", null); }
+
+    // glyphs share the action list; stored as gm_<glyph> / gm_<glyph>_app
+    static int glyphAction(SharedPreferences sp, String glyph) { return sp.getInt("gm_" + glyph, NONE); }
+    static String glyphApp(SharedPreferences sp, String glyph) { return sp.getString("gm_" + glyph + "_app", null); }
 }

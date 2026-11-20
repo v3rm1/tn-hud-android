@@ -106,6 +106,115 @@ public class HudLauncher extends Activity {
         setContentView(root);
         la.registerCallback(appsChanged, h);
         loadApps();
+        host = new android.appwidget.AppWidgetHost(this, 4711);
+        awm = android.appwidget.AppWidgetManager.getInstance(this);
+    }
+
+    @Override protected void onStart() {
+        super.onStart();
+        try { host.startListening(); } catch (Throwable ignored) { }
+        HudBus.listen(new HudBus.WidgetListener() { public void onWidgetRect(int[] r) { placeWidget(r); } });
+    }
+
+    @Override protected void onStop() {
+        HudBus.listen(null);
+        try { host.stopListening(); } catch (Throwable ignored) { }
+        super.onStop();
+    }
+
+    // ------------------------------------------------------------------ hosted widget (stage 3)
+    android.appwidget.AppWidgetHost host;
+    android.appwidget.AppWidgetManager awm;
+    android.appwidget.AppWidgetHostView wView;
+    int pendingId = -1;
+    static final int RC_BIND = 41, RC_CONFIGURE = 42;
+
+    /** move / show / hide the widget over the HUD's widget frame (rect in screen pixels, null = slot not on screen) */
+    int[] lastRect;
+
+    void placeWidget(int[] r) {
+        lastRect = r;
+        int id = sp.getInt("wgId", -1);
+        if (r == null || id < 0 || drawer.getVisibility() == View.VISIBLE) { if (wView != null) wView.setVisibility(View.GONE); return; }
+        android.appwidget.AppWidgetProviderInfo info = awm.getAppWidgetInfo(id);
+        if (info == null) { sp.edit().remove("wgId").remove("wgLabel").apply(); return; }
+        if (wView == null || wView.getAppWidgetId() != id) {
+            if (wView != null) root.removeView(wView);
+            wView = host.createView(getApplicationContext(), id, info);
+            wView.setAppWidget(id, info);
+            root.addView(wView, 1);                               // above the gesture layer, below the drawer
+        }
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(r[2] - r[0], r[3] - r[1]);
+        lp.leftMargin = r[0]; lp.topMargin = r[1];
+        wView.setLayoutParams(lp);
+        wView.setVisibility(View.VISIBLE);
+        int wd = Math.round((r[2] - r[0]) / dp), hd = Math.round((r[3] - r[1]) / dp);
+        try { wView.updateAppWidgetSize(null, wd, hd, wd, hd); } catch (Throwable ignored) { }
+    }
+
+    void pickWidget() {
+        final List<android.appwidget.AppWidgetProviderInfo> L = awm.getInstalledProviders();
+        final android.content.pm.PackageManager pm = getPackageManager();
+        Collections.sort(L, new Comparator<android.appwidget.AppWidgetProviderInfo>() {
+            public int compare(android.appwidget.AppWidgetProviderInfo a, android.appwidget.AppWidgetProviderInfo b) {
+                return wLabel(a, pm).compareToIgnoreCase(wLabel(b, pm));
+            }
+        });
+        String[] names = new String[L.size()];
+        for (int i = 0; i < names.length; i++) names[i] = wLabel(L.get(i), pm);
+        new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle("Widget for the HUD slot").setItems(names, new DialogInterface.OnClickListener() {
+            public void onClick(DialogInterface d, int w) { bindWidget(L.get(w)); }
+        }).setNegativeButton("Cancel", null).show();
+    }
+
+    String wLabel(android.appwidget.AppWidgetProviderInfo i, android.content.pm.PackageManager pm) {
+        String app;
+        try { app = String.valueOf(pm.getApplicationLabel(pm.getApplicationInfo(i.provider.getPackageName(), 0))); } catch (Exception e) { app = i.provider.getPackageName(); }
+        String w = String.valueOf(i.loadLabel(pm));
+        return app.equals(w) ? app : app + " \u00B7 " + w;
+    }
+
+    void bindWidget(android.appwidget.AppWidgetProviderInfo info) {
+        removeWidget();
+        pendingId = host.allocateAppWidgetId();
+        sp.edit().putString("wgLabelPending", wLabel(info, getPackageManager()).toUpperCase(Locale.ROOT)).apply();
+        if (awm.bindAppWidgetIdIfAllowed(pendingId, info.provider)) configureWidget(info);
+        else {
+            Intent i = new Intent(android.appwidget.AppWidgetManager.ACTION_APPWIDGET_BIND)
+                    .putExtra(android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_ID, pendingId)
+                    .putExtra(android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_PROVIDER, info.provider);
+            try { startActivityForResult(i, RC_BIND); } catch (Exception e) { host.deleteAppWidgetId(pendingId); pendingId = -1; }
+        }
+    }
+
+    void configureWidget(android.appwidget.AppWidgetProviderInfo info) {
+        if (info.configure != null) {
+            try { host.startAppWidgetConfigureActivityForResult(this, pendingId, 0, RC_CONFIGURE, null); return; }
+            catch (Throwable t) { /* no configure screen reachable: use as is */ }
+        }
+        commitWidget();
+    }
+
+    void commitWidget() {
+        sp.edit().putInt("wgId", pendingId).putString("wgLabel", sp.getString("wgLabelPending", "WIDGET")).apply();
+        pendingId = -1;
+        command("tnhud.launcher", 0, 0, 1);                       // the wallpaper re-reads prefs and redraws the slot
+    }
+
+    void removeWidget() {
+        int id = sp.getInt("wgId", -1);
+        if (id >= 0) { try { host.deleteAppWidgetId(id); } catch (Throwable ignored) { } }
+        sp.edit().remove("wgId").remove("wgLabel").apply();
+        if (wView != null) { root.removeView(wView); wView = null; }
+        command("tnhud.launcher", 0, 0, 1);
+    }
+
+    @Override protected void onActivityResult(int rc, int res, Intent data) {
+        super.onActivityResult(rc, res, data);
+        if (pendingId < 0) return;
+        if (res != RESULT_OK) { host.deleteAppWidgetId(pendingId); pendingId = -1; return; }
+        if (rc == RC_BIND) configureWidget(awm.getAppWidgetInfo(pendingId));
+        else if (rc == RC_CONFIGURE) commitWidget();
     }
 
     @Override protected void onResume() {
@@ -147,6 +256,34 @@ public class HudLauncher extends Activity {
     final class GestureLayer extends View {
         float x0, y0; long t0; boolean longFired, two;
         float lastTapX, lastTapY; long lastTapT;
+        final ArrayList<float[]> stroke = new ArrayList<float[]>();
+        final android.graphics.Path trail = new android.graphics.Path();
+        final android.graphics.Paint tp = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        float trailA; String label; int labelCol;
+        final Runnable fade = new Runnable() { public void run() {
+            trailA -= 0.08f;
+            if (trailA > 0) { invalidate(); postDelayed(this, 16); } else { trailA = 0; label = null; trail.reset(); invalidate(); }
+        } };
+
+        @Override protected void onDraw(android.graphics.Canvas c) {
+            if (trailA <= 0 || !sp.getBoolean("lnTrail", true)) return;
+            tp.setStyle(android.graphics.Paint.Style.STROKE); tp.setStrokeCap(android.graphics.Paint.Cap.ROUND); tp.setStrokeJoin(android.graphics.Paint.Join.ROUND);
+            tp.setColor(CYAN); tp.setAlpha((int) (60 * trailA)); tp.setStrokeWidth(14 * dp); c.drawPath(trail, tp);
+            tp.setAlpha((int) (230 * trailA)); tp.setStrokeWidth(3 * dp); c.drawPath(trail, tp);
+            if (label != null) {
+                tp.setStyle(android.graphics.Paint.Style.FILL); tp.setTypeface(mono); tp.setTextSize(22 * dp); tp.setTextAlign(android.graphics.Paint.Align.CENTER);
+                tp.setColor(labelCol); tp.setAlpha((int) (255 * Math.min(1, trailA * 1.5f)));
+                c.drawText(label, getWidth() / 2f, getHeight() * 0.62f, tp);
+            }
+        }
+
+        /** a stroke that bends (chord well short of its length) is a glyph attempt, a straight one a swipe */
+        boolean glyphLike() {
+            if (stroke.size() < 6 || !sp.getBoolean("lnGlyphs", true)) return false;
+            float L = Glyph.pathLen(stroke);
+            float[] a = stroke.get(0), b = stroke.get(stroke.size() - 1);
+            return L > 110 * dp && Math.hypot(b[0] - a[0], b[1] - a[1]) < 0.8f * L;
+        }
         final int slop = ViewConfiguration.get(HudLauncher.this).getScaledTouchSlop();
         final Runnable longPress = new Runnable() { public void run() { longFired = true; performHapticFeedback(0); launcherMenu(); } };
 
@@ -156,6 +293,8 @@ public class HudLauncher extends Activity {
             switch (e.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
                     x0 = e.getRawX(); y0 = e.getRawY(); t0 = e.getEventTime(); longFired = false; two = false;
+                    removeCallbacks(fade); stroke.clear(); stroke.add(new float[]{e.getX(), e.getY()});
+                    trail.reset(); trail.moveTo(e.getX(), e.getY()); label = null; trailA = 0;
                     postDelayed(longPress, ViewConfiguration.getLongPressTimeout() + 150);
                     return true;
                 case MotionEvent.ACTION_POINTER_DOWN:
@@ -163,11 +302,28 @@ public class HudLauncher extends Activity {
                     return true;
                 case MotionEvent.ACTION_MOVE:
                     if (Math.hypot(e.getRawX() - x0, e.getRawY() - y0) > slop) removeCallbacks(longPress);
+                    if (!two) {
+                        for (int k = 0; k < e.getHistorySize(); k++) { stroke.add(new float[]{e.getHistoricalX(k), e.getHistoricalY(k)}); trail.lineTo(e.getHistoricalX(k), e.getHistoricalY(k)); }
+                        stroke.add(new float[]{e.getX(), e.getY()}); trail.lineTo(e.getX(), e.getY());
+                        if (Math.hypot(e.getRawX() - x0, e.getRawY() - y0) > slop) { trailA = 1; invalidate(); }
+                    }
                     return true;
                 case MotionEvent.ACTION_UP: {
                     removeCallbacks(longPress);
                     if (longFired) return true;
                     float dx = e.getRawX() - x0, dy = e.getRawY() - y0, ad = 48 * dp;
+                    if (trailA > 0) postDelayed(fade, 260);
+                    if (!two && glyphLike()) {
+                        Object[] r = Glyph.recognise(sp, stroke);
+                        String g = (String) r[0];
+                        int act = g == null ? Gestures.NONE : Gestures.glyphAction(sp, g);
+                        if (act != Gestures.NONE) {
+                            label = g + "  \u2192  " + actionName(act, Gestures.glyphApp(sp, g)); labelCol = CYAN;
+                            runAction(act, Gestures.glyphApp(sp, g));
+                        } else { label = g == null ? "?  NOT RECOGNISED" : g + "  \u00B7  NOT ASSIGNED"; labelCol = COMMENT; }
+                        trailA = 1; invalidate();
+                        return true;
+                    }
                     if (two) {
                         if (dy > ad && Math.abs(dy) > 1.4f * Math.abs(dx)) run(Gestures.TWO_DOWN);
                     } else if (Math.hypot(dx, dy) < slop * 1.5f && e.getEventTime() - t0 < 400) {
@@ -192,8 +348,14 @@ public class HudLauncher extends Activity {
     }
 
     /** run the action mapped to a gesture */
-    void run(String gesture) {
-        int a = Gestures.get(sp, gesture);
+    void run(String gesture) { runAction(Gestures.get(sp, gesture), Gestures.app(sp, gesture)); }
+
+    String actionName(int a, String appKey) {
+        if (a == Gestures.OPEN_APP) { for (App x : apps) if (x.key.equals(appKey)) return x.label.toUpperCase(Locale.ROOT); return "APP"; }
+        return Gestures.ACTION_NAMES[a].toUpperCase(Locale.ROOT);
+    }
+
+    void runAction(int a, String appKey) {
         if (a != Gestures.NONE) touch.performHapticFeedback(1);
         switch (a) {
             case Gestures.DRAWER: openDrawer(); break;
@@ -207,8 +369,7 @@ public class HudLauncher extends Activity {
             case Gestures.NEXT_TAB: command("tnhud.page", 0, 0, 1); break;
             case Gestures.HUD_SETTINGS: try { startActivity(new Intent(this, SetWallpaper.class)); } catch (Exception ignored) { } break;
             case Gestures.OPEN_APP: {
-                String key = Gestures.app(sp, gesture);
-                for (App x : apps) if (x.key.equals(key)) { launch(x); return; }
+                for (App x : apps) if (x.key.equals(appKey)) { launch(x); return; }
                 break;
             }
             default: break;
@@ -241,12 +402,17 @@ public class HudLauncher extends Activity {
     }
 
     void launcherMenu() {
-        final String[] items = {"HUD settings", "Home app", "Android settings"};
+        final boolean hasW = sp.getInt("wgId", -1) >= 0;
+        final String[] items = hasW ? new String[]{"HUD settings", "Choose widget\u2026", "Remove widget", "Home app", "Android settings"}
+                : new String[]{"HUD settings", "Choose widget\u2026", "Home app", "Android settings"};
         new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setItems(items, new DialogInterface.OnClickListener() {
             public void onClick(DialogInterface d, int w) {
+                String it = items[w];
                 try {
-                    if (w == 0) startActivity(new Intent(HudLauncher.this, SetWallpaper.class));
-                    else if (w == 1) startActivity(new Intent(android.provider.Settings.ACTION_HOME_SETTINGS));
+                    if (it.startsWith("HUD")) startActivity(new Intent(HudLauncher.this, SetWallpaper.class));
+                    else if (it.startsWith("Choose")) pickWidget();
+                    else if (it.startsWith("Remove")) removeWidget();
+                    else if (it.startsWith("Home")) startActivity(new Intent(android.provider.Settings.ACTION_HOME_SETTINGS));
                     else startActivity(new Intent(android.provider.Settings.ACTION_SETTINGS));
                 } catch (Exception ignored) { }
             }
@@ -374,6 +540,7 @@ public class HudLauncher extends Activity {
         drawer.setVisibility(View.VISIBLE);
         drawer.animate().alpha(1f).translationY(0).setDuration(160).start();
         command("tnhud.drawer", 0, 0, 1);
+        if (wView != null) wView.setVisibility(View.GONE);
         search.requestFocus();
         h.postDelayed(new Runnable() { public void run() {
             InputMethodManager im = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
@@ -384,7 +551,7 @@ public class HudLauncher extends Activity {
     void closeDrawer() {
         hideKeyboard();
         drawer.animate().alpha(0f).translationY(60 * dp).setDuration(120).withEndAction(new Runnable() {
-            public void run() { drawer.setVisibility(View.GONE); }
+            public void run() { drawer.setVisibility(View.GONE); placeWidget(lastRect); }
         }).start();
         command("tnhud.drawer", 0, 0, 0);
     }
@@ -530,11 +697,48 @@ public class HudLauncher extends Activity {
         }
     }
 
+    /** app shortcuts (API 25+, default launcher only), reached by reflection: {label, ShortcutInfo} */
+    List<Object[]> shortcuts(App a) {
+        List<Object[]> out = new ArrayList<Object[]>();
+        try {
+            if (!(Boolean) LauncherApps.class.getMethod("hasShortcutHostPermission").invoke(la)) return out;
+            Class<?> q = Class.forName("android.content.pm.LauncherApps$ShortcutQuery");
+            Object query = q.newInstance();
+            q.getMethod("setPackage", String.class).invoke(query, a.cn.getPackageName());
+            q.getMethod("setActivity", ComponentName.class).invoke(query, a.cn);
+            q.getMethod("setQueryFlags", int.class).invoke(query, 1 | 2 | 8);          // dynamic | pinned | manifest
+            List<?> L = (List<?>) LauncherApps.class.getMethod("getShortcuts", q, UserHandle.class).invoke(la, query, a.user);
+            if (L == null) return out;
+            Class<?> si = Class.forName("android.content.pm.ShortcutInfo");
+            for (Object s : L) {
+                if (!(Boolean) si.getMethod("isEnabled").invoke(s)) continue;
+                CharSequence lb = (CharSequence) si.getMethod("getShortLabel").invoke(s);
+                out.add(new Object[]{lb == null ? "?" : lb.toString(), s});
+                if (out.size() >= 5) break;
+            }
+        } catch (Throwable ignored) { }
+        return out;
+    }
+
+    void startShortcut(Object info) {
+        try {
+            Class<?> si = Class.forName("android.content.pm.ShortcutInfo");
+            LauncherApps.class.getMethod("startShortcut", si, Rect.class, Bundle.class).invoke(la, info, new Rect(), null);
+            h.postDelayed(new Runnable() { public void run() { drawer.setVisibility(View.GONE); hideKeyboard(); command("tnhud.drawer", 0, 0, 0); } }, 250);
+        } catch (Throwable ignored) { }
+    }
+
     void appMenu(final App a) {
         final boolean hid = hidden(a);
-        String[] items = {"App info", "Rename", hid ? "Unhide" : "Hide from list", "Reset launch count", "Uninstall"};
+        final List<Object[]> sc = shortcuts(a);
+        String[] base = {"App info", "Rename", hid ? "Unhide" : "Hide from list", "Reset launch count", "Uninstall"};
+        String[] items = new String[sc.size() + base.length];
+        for (int i = 0; i < sc.size(); i++) items[i] = "\u203A " + sc.get(i)[0];
+        System.arraycopy(base, 0, items, sc.size(), base.length);
         new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle(a.label).setItems(items, new DialogInterface.OnClickListener() {
-            public void onClick(DialogInterface d, int w) {
+            public void onClick(DialogInterface d, int w0) {
+                if (w0 < sc.size()) { startShortcut(sc.get(w0)[1]); return; }
+                int w = w0 - sc.size();
                 if (w == 0) { try { la.startAppDetailsActivity(a.cn, a.user, null, null); } catch (Throwable ignored) { } }
                 else if (w == 1) rename(a);
                 else if (w == 2) { sp.edit().putBoolean("lh_" + a.key, !hid).apply(); filter(); }

@@ -157,15 +157,16 @@ public final class HudRenderer {
         public double[] kpFcT, kpFcV;
         public long[] hrT; public float[] hrTemp, hrPop;
         public long wxHourlyUntil;
-        public int skySel = -1; public long skySelUntil;                                // favourites bar removed: modules use its space, readouts at the bottom                      // overlay opacity at full night dimming, 0.3 .. 0.7
+        public int skySel = -1; public long skySelUntil;
+        public boolean launcherMode; public String widgetLabel;                                // favourites bar removed: modules use its space, readouts at the bottom                      // overlay opacity at full night dimming, 0.3 .. 0.7
         public float pageAnim = 1f, tapAnim = 1f;
         public boolean virtualPages, labShown;
         /** [0] single page, [1..3] tabs; columns = MOD_* */
         public final boolean[][] mods = {
-            {true, true, true, true, true, false, false, false, false, false},
-            {true, true, true, false, false, false, true, false, false, true},
-            {true, true, false, true, true, false, false, false, false, false},
-            {true, true, false, false, false, true, false, false, true, false}};
+            {true, true, true, true, true, false, false, false, false, false, false},
+            {true, true, true, false, false, false, true, false, false, true, false},
+            {true, true, false, true, true, false, false, false, false, false, false},
+            {true, true, false, false, false, true, false, false, true, false, false}};
         /** visible (non-empty) tabs -> out[i] = tab index 0..2; returns count */
         public int visibleTabs(int[] out) {
             int n = 0;
@@ -1016,8 +1017,8 @@ public final class HudRenderer {
 
     // ---------------------------------------------------------------- modules
     /** reorderable content modules (clock + weather form the fixed header) and their heights */
-    public static final int[] DEF_ORDER = {6, 9, 2, 3, 4, 5, 8};
-    static float modH(int m) { switch (m) { case 6: return 150; case 9: return 180; case 2: return 720; case 3: return 570; case 4: return 670; case 5: return 640; default: return 150; } }
+    public static final int[] DEF_ORDER = {6, 9, 10, 2, 3, 4, 5, 8};
+    static float modH(int m) { switch (m) { case 6: return 150; case 9: return 180; case 2: return 720; case 3: return 570; case 4: return 670; case 5: return 640; case 10: return 440; default: return 150; } }
     /** order with unknown ids dropped and missing ones appended */
     public static int[] cleanOrder(int[] o, int[] def) {
         int[] out = new int[def.length]; int n = 0;
@@ -1032,12 +1033,13 @@ public final class HudRenderer {
     public static final boolean[] LK_ON_DEF = {false, true, true, true, true, true, true, true, true, true, true, true, true};
 
     public static final int MOD_CLOCK = 0, MOD_WX = 1, MOD_DEV = 2, MOD_SKY = 3, MOD_SEN = 4, MOD_CAL = 5, MOD_SEARCH = 6,
-            MOD_TODO = 7, MOD_NOTES = 8, MOD_MUSIC = 9, NMOD = 10;
-    static final String[] MOD_TAB = {"MIN", "MIN", "DEV", "SKY", "SEN", "CAL", "SRCH", "TODO", "NOTE", "MEDIA"};
+            MOD_TODO = 7, MOD_NOTES = 8, MOD_MUSIC = 9, MOD_WIDGET = 10, NMOD = 11;
+    static final String[] MOD_TAB = {"MIN", "MIN", "DEV", "SKY", "SEN", "CAL", "SRCH", "TODO", "NOTE", "MEDIA", "WDGT"};
     private boolean hClock, hCal;
     private float hCalY0, hCalY1, tabY0, tabY1;
 
     private void dashboard(Canvas c, Data d, float dec, long seed) {
+        wgShown = false;
         frame(c, BLUE);
         float x0 = M + 40, xr = W - M - 40;
         hSky = false; hDial = false; hMotion = false; hClock = false; hCal = false; tabN = 0; cdy = 0;
@@ -1090,6 +1092,7 @@ public final class HudRenderer {
             if (m == MOD_SEARCH) searchBlock(c, y);
             else if (m == MOD_MUSIC) musicBlock(c, d, y);
             else if (m == MOD_NOTES) notesBlock(c, y);
+            else if (m == MOD_WIDGET) widgetBlock(c, d, y, y + hk - 30);
             else if (m == MOD_DEV) { c.save(); c.translate(0, (y - 500) * s); tdy = y - 500; deviceBlock(c, d, pdec, seed + 10); tdy = 0; c.restore(); }
             else if (m == MOD_SKY) sky(c, d, pdec, seed + 60, y + 70);
             else if (m == MOD_SEN) { lab(c, d, pdec, seed + 70, y + 70); d.labShown = true; }
@@ -1103,6 +1106,19 @@ public final class HudRenderer {
             String hint = "\u2191 SWIPE UP · APPS";
             textR(c, hint, xr, H - M - 122, LINE, 22);
         }
+    }
+
+    // ---- hosted widget slot: the launcher places a real app widget over this frame (rect handed over in pixels)
+    public int wgL, wgT, wgR, wgB; public boolean wgShown;
+
+    private void widgetBlock(Canvas c, Data d, float y0, float y1) {
+        float x0 = M + 40, xr = W - M - 40, b0 = y0 + 60;
+        sectionTitle(c, "// WIDGET", d.widgetLabel, y0);
+        stroke(LINE, 2); box(c, x0, b0, xr, y1);
+        if (!d.launcherMode) textC(c, "NEEDS THE TN-HUD LAUNCHER", (x0 + xr) / 2, (b0 + y1) / 2 + 8, COMMENT, 22);
+        else if (d.widgetLabel == null) textC(c, "LONG-PRESS HOME \u203A CHOOSE WIDGET", (x0 + xr) / 2, (b0 + y1) / 2 + 8, COMMENT, 22);
+        wgL = Math.round((x0 + 6) * s); wgT = Math.round((b0 + 6) * s); wgR = Math.round((xr - 6) * s); wgB = Math.round((y1 - 6) * s);
+        wgShown = true;
     }
 
     /** [01] WHATSAPP-style text blocks, equal width, single tap opens the app */
