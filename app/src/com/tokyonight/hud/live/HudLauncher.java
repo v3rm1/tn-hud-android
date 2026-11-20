@@ -1,12 +1,10 @@
 package com.tokyonight.hud.live;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.app.PendingIntent;
 import android.app.WallpaperManager;
 import android.content.ComponentName;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.LauncherActivityInfo;
@@ -153,7 +151,10 @@ public class HudLauncher extends Activity {
     void buildPanel() {
         panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setBackgroundColor(BG);
+        panelBlur = Glass.blurAvailable(this);
+        panel.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, panelBlur
+                ? new int[]{0xB81A1B26, 0x9E1A1B26, 0xC416161E}          // translucent: the blurred HUD shows through
+                : new int[]{0xF21A1B26, 0xEB1A1B26, 0xF516161E}));
         panel.setFitsSystemWindows(true);
         panel.setPadding(px(20), px(12), px(20), 0);
         LinearLayout top = new LinearLayout(this);
@@ -190,6 +191,30 @@ public class HudLauncher extends Activity {
         root.addView(panel, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
     }
 
+    boolean panelBlur;
+
+    /** frosts the HUD wallpaper behind the launcher window while the panel is open (Android 12+, blur enabled) */
+    void windowBlur(boolean on) {
+        if (!panelBlur || Build.VERSION.SDK_INT < 31) return;
+        try {
+            android.view.Window w = getWindow();
+            if (on) w.addFlags(0x4 /* FLAG_BLUR_BEHIND */); else w.clearFlags(0x4);
+            WindowManager.LayoutParams a = w.getAttributes();
+            WindowManager.LayoutParams.class.getMethod("setBlurBehindRadius", int.class).invoke(a, on ? px(32) : 0);
+            w.setAttributes(a);
+        } catch (Throwable ignored) { }
+    }
+
+    /** glass card: translucent storm fill, faint light rim, brighter while pressed */
+    Drawable glassCard(float radius) {
+        GradientDrawable n = new GradientDrawable(); n.setColor(0x6624283B); n.setCornerRadius(radius); n.setStroke(px(1), 0x29C0CAF5);
+        GradientDrawable p = new GradientDrawable(); p.setColor(0x4D7AA2F7); p.setCornerRadius(radius); p.setStroke(px(1), 0x667AA2F7);
+        StateListDrawable sl = new StateListDrawable();
+        sl.addState(new int[]{android.R.attr.state_pressed}, p);
+        sl.addState(new int[0], n);
+        return sl;
+    }
+
     void openPanel() {
         if (panel == null) buildPanel();
         if (Link.installed(this)) Link.send(this, "refresh", null, 0);
@@ -197,6 +222,7 @@ public class HudLauncher extends Activity {
         panel.setAlpha(0f); panel.setTranslationY(-80 * dp);
         panel.setVisibility(View.VISIBLE);
         panel.animate().alpha(1f).translationY(0).setDuration(160).start();
+        windowBlur(true);
         command("tnhud.drawer", 0, 0, 1);
         if (wView != null) wView.setVisibility(View.GONE);
     }
@@ -205,15 +231,15 @@ public class HudLauncher extends Activity {
         panel.animate().alpha(0f).translationY(-60 * dp).setDuration(120).withEndAction(new Runnable() {
             public void run() { panel.setVisibility(View.GONE); placeWidget(lastRect); }
         }).start();
+        windowBlur(false);
         command("tnhud.drawer", 0, 0, 0);
     }
 
     TextView chip(String label, boolean on, View.OnClickListener l) {
-        TextView t = tv(label, 13, on ? 0xFF000000 : FG);
+        TextView t = tv(label, 13, on ? 0xFF1A1B26 : FG);
         t.setGravity(Gravity.CENTER);
-        GradientDrawable g = new GradientDrawable();
-        g.setColor(on ? CYAN : 0xFF0B0E17); g.setStroke(px(1), on ? CYAN : LINE);
-        t.setBackground(g);
+        if (on) { GradientDrawable g = new GradientDrawable(); g.setColor(0xE67DCFFF); g.setCornerRadius(px(10)); t.setBackground(g); }
+        else t.setBackground(glassCard(px(10)));
         t.setOnClickListener(l);
         return t;
     }
@@ -257,9 +283,8 @@ public class HudLauncher extends Activity {
             final int i = k;
             LinearLayout row = new LinearLayout(this);
             row.setOrientation(LinearLayout.VERTICAL);
-            row.setPadding(px(10), px(10), px(10), px(10));
-            GradientDrawable g = new GradientDrawable(); g.setColor(0xFF0B0E17); g.setStroke(px(1), LINE);
-            row.setBackground(g);
+            row.setPadding(px(14), px(12), px(14), px(12));
+            row.setBackground(glassCard(px(14)));
             long ago = Math.max(0, now - (i < Link.nWhen.length ? Link.nWhen[i] : now)) / 60000;
             String when = ago < 1 ? "NOW" : ago < 60 ? ago + "M" : ago < 1440 ? (ago / 60) + "H" : (ago / 1440) + "D";
             row.addView(tv(Link.nApp[i].toUpperCase(Locale.ROOT) + "  ·  " + when, 12, COMMENT));
@@ -282,7 +307,7 @@ public class HudLauncher extends Activity {
             lp.topMargin = px(8);
             notes.addView(row, lp);
         }
-        TextView hint = tv("TAP OPENS · LONG-PRESS DISMISSES · SWIPE UP AT THE END CLOSES", 11, LINE);
+        TextView hint = tv("TAP OPENS · LONG-PRESS DISMISSES · SWIPE UP AT THE END CLOSES", 11, COMMENT);
         hint.setPadding(px(4), px(14), 0, px(24));
         notes.addView(hint);
     }
@@ -333,9 +358,9 @@ public class HudLauncher extends Activity {
         });
         String[] names = new String[L.size()];
         for (int i = 0; i < names.length; i++) names[i] = wLabel(L.get(i), pm);
-        new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle("Widget for the HUD slot").setItems(names, new DialogInterface.OnClickListener() {
-            public void onClick(DialogInterface d, int w) { bindWidget(L.get(w)); }
-        }).setNegativeButton("Cancel", null).show();
+        glass().list("Widget for the HUD slot", names, -1, new Glass.Pick() {
+            public void on(int w) { bindWidget(L.get(w)); }
+        }).show();
     }
 
     String wLabel(android.appwidget.AppWidgetProviderInfo i, android.content.pm.PackageManager pm) {
@@ -583,12 +608,14 @@ public class HudLauncher extends Activity {
         } catch (Throwable ignored) { }
     }
 
+    Glass glass() { return new Glass(this, true, mono); }
+
     void launcherMenu() {
         final boolean hasW = sp.getInt("wgId", -1) >= 0;
         final String[] items = hasW ? new String[]{"HUD settings", "Choose widget\u2026", "Remove widget", "Home app", "Android settings"}
                 : new String[]{"HUD settings", "Choose widget\u2026", "Home app", "Android settings"};
-        new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setItems(items, new DialogInterface.OnClickListener() {
-            public void onClick(DialogInterface d, int w) {
+        glass().list(null, items, -1, new Glass.Pick() {
+            public void on(int w) {
                 String it = items[w];
                 try {
                     if (it.startsWith("HUD")) openSettings();
@@ -925,8 +952,8 @@ public class HudLauncher extends Activity {
         String[] items = new String[sc.size() + base.length];
         for (int i = 0; i < sc.size(); i++) items[i] = "\u203A " + sc.get(i)[0];
         System.arraycopy(base, 0, items, sc.size(), base.length);
-        new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle(a.label).setItems(items, new DialogInterface.OnClickListener() {
-            public void onClick(DialogInterface d, int w0) {
+        glass().list(a.label, items, -1, new Glass.Pick() {
+            public void on(int w0) {
                 if (w0 < sc.size()) { startShortcut(sc.get(w0)[1]); return; }
                 int w = w0 - sc.size();
                 if (w == 0) { try { la.startAppDetailsActivity(a.cn, a.user, null, null); } catch (Throwable ignored) { } }
@@ -945,18 +972,19 @@ public class HudLauncher extends Activity {
     }
 
     void rename(final App a) {
-        final EditText e = new EditText(this);
-        e.setText(a.label); e.setSelectAllOnFocus(true); e.setSingleLine(true);
-        new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle("Rename").setView(e)
-                .setPositiveButton("Save", new DialogInterface.OnClickListener() { public void onClick(DialogInterface d, int w) {
-                    String s = e.getText().toString().trim();
-                    if (s.isEmpty()) sp.edit().remove("ln_" + a.key).apply(); else sp.edit().putString("ln_" + a.key, s).apply();
-                    loadApps();
-                } })
-                .setNeutralButton("Original", new DialogInterface.OnClickListener() { public void onClick(DialogInterface d, int w) {
-                    sp.edit().remove("ln_" + a.key).apply(); loadApps();
-                } })
-                .setNegativeButton("Cancel", null).show();
+        Glass g = glass();
+        final EditText e = g.field(a.label);
+        e.setSelectAllOnFocus(true); e.setSingleLine(true);
+        android.app.Dialog d = g.sheet("Rename", g.padded(e), new String[]{"Original", "Cancel", "Save"}, new Glass.Pick() {
+            public void on(int w) {
+                if (w == 1) return;
+                String s = w == 0 ? "" : e.getText().toString().trim();
+                if (s.isEmpty()) sp.edit().remove("ln_" + a.key).apply(); else sp.edit().putString("ln_" + a.key, s).apply();
+                loadApps();
+            }
+        });
+        if (d.getWindow() != null) d.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE);
+        d.show();
     }
 
     // ------------------------------------------------------------------ drawer styles and icons
@@ -993,11 +1021,12 @@ public class HudLauncher extends Activity {
         final int gen = iconGen, size = iconPx(), dpi = getResources().getDisplayMetrics().densityDpi;
         final boolean frame = iconSigFrame;
         final ColorMatrixColorFilter tint = iconFilter();
+        final boolean neon = sp.getInt("lnIconTint", 0) == 2;
         final LauncherActivityInfo info = a.info;
         final boolean work = a.work;
         iconExec.execute(new Runnable() { public void run() {
             Bitmap bm = null;
-            try { bm = renderIcon(info.getBadgedIcon(dpi), size, frame && loadFrames(), tint, work); } catch (Throwable ignored) { }
+            try { bm = renderIcon(info.getBadgedIcon(dpi), size, frame && loadFrames(), tint, neon, work); } catch (Throwable ignored) { }
             final Bitmap fb = bm;
             h.post(new Runnable() { public void run() {
                 if (gen != iconGen) return;
@@ -1045,7 +1074,7 @@ public class HudLauncher extends Activity {
         } catch (Throwable e) { return false; }
     }
 
-    Bitmap renderIcon(Drawable d, int size, boolean frame, ColorMatrixColorFilter tint, boolean work) {
+    Bitmap renderIcon(Drawable d, int size, boolean frame, ColorMatrixColorFilter tint, boolean neon, boolean work) {
         if (d == null) return null;
         Bitmap out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
         Canvas c = new Canvas(out);
@@ -1055,6 +1084,7 @@ public class HudLauncher extends Activity {
             int n = c.saveLayer(0, 0, size, size, ip, Canvas.ALL_SAVE_FLAG);
             d.setBounds(0, 0, size, size); d.draw(c);
             c.restoreToCount(n);
+            if (neon) neonize(out);
             return out;
         }
         RectF full = new RectF(0, 0, size, size);
@@ -1069,6 +1099,7 @@ public class HudLauncher extends Activity {
             d.setBounds(Math.round(ir.left), Math.round(ir.top), Math.round(ir.right), Math.round(ir.bottom)); d.draw(lc);
             lc.restoreToCount(n);
         }
+        if (neon) neonize(layer);
         Paint mp = new Paint(Paint.FILTER_BITMAP_FLAG);
         mp.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.DST_OUT));    // opaque mask pixels cut the icon
         lc.drawBitmap(fMask, null, full, mp);
@@ -1098,27 +1129,66 @@ public class HudLauncher extends Activity {
         if (b == null) loadIcon(a, iv);
     }
 
-    ColorMatrixColorFilter monoF, neonF;
-    /** icon colour: 0 original, 1 mono, 2 neon (luminance mapped onto Tokyo Night cyan) */
+    ColorMatrixColorFilter monoF;
+    /** icon colour: 0 original, 1 mono, 2 neon (see neonLut); only mono is a colour filter */
     ColorMatrixColorFilter iconFilter() {
-        int m = sp.getInt("lnIconTint", 0);
-        if (m == 1) {
-            if (monoF == null) { ColorMatrix cm = new ColorMatrix(); cm.setSaturation(0); monoF = new ColorMatrixColorFilter(cm); }
-            return monoF;
-        }
-        if (m == 2) {
-            if (neonF == null) {
-                float r = 0.2126f, g = 0.7152f, b = 0.0722f, cr = 0x7D / 255f, cg = 0xCF / 255f, cb = 1f;
-                neonF = new ColorMatrixColorFilter(new ColorMatrix(new float[]{
-                        r * cr, g * cr, b * cr, 0, 0,
-                        r * cg, g * cg, b * cg, 0, 0,
-                        r * cb, g * cb, b * cb, 0, 0,
-                        0, 0, 0, 1, 0}));
-            }
-            return neonF;
-        }
-        return null;
+        if (sp.getInt("lnIconTint", 0) != 1) return null;
+        if (monoF == null) { ColorMatrix cm = new ColorMatrix(); cm.setSaturation(0); monoF = new ColorMatrixColorFilter(cm); }
+        return monoF;
     }
+
+    /** neon gradient map: deep blue shadows, blue mids, cyan highlights, Tokyo Night foreground at the top */
+    static final float[] NEON_POS = {0f, 0.42f, 0.74f, 1f};
+    static final int[] NEON_COL = {0x34467C, 0x7AA2F7, 0x7DCFFF, 0xC0CAF5};
+    static int[] neonLut;
+    static synchronized int[] neonLut() {
+        if (neonLut == null) {
+            int[] l = new int[256];
+            for (int i = 0; i < 256; i++) {
+                float t = i / 255f;
+                int k = 0;
+                while (k < NEON_POS.length - 2 && t > NEON_POS[k + 1]) k++;
+                float f = (t - NEON_POS[k]) / (NEON_POS[k + 1] - NEON_POS[k]);
+                int a = NEON_COL[k], b = NEON_COL[k + 1], rgb = 0;
+                for (int sh = 16; sh >= 0; sh -= 8) {
+                    int ca = (a >> sh) & 255, cb = (b >> sh) & 255;
+                    rgb |= Math.round(ca + (cb - ca) * f) << sh;
+                }
+                l[i] = rgb;
+            }
+            neonLut = l;
+        }
+        return neonLut;
+    }
+
+    /**
+     * Recolours a bitmap in place through the neon ramp. Luminance is stretched to the icon's own range first, so
+     * low-contrast icons (white tiles, pastel logos) still separate shape from background instead of going flat.
+     */
+    static void neonize(Bitmap b) {
+        int w = b.getWidth(), hh = b.getHeight();
+        int[] px = new int[w * hh];
+        b.getPixels(px, 0, w, 0, 0, w, hh);
+        int lo = 255, hi = 0;
+        for (int p : px) {
+            if ((p >>> 24) < 32) continue;
+            int y = lum(p);
+            if (y < lo) lo = y;
+            if (y > hi) hi = y;
+        }
+        int span = hi - lo;
+        int[] lut = neonLut();
+        for (int i = 0; i < px.length; i++) {
+            int p = px[i], al = p >>> 24;
+            if (al == 0) continue;
+            int y = lum(p);
+            if (span >= 40) y = Math.max(0, Math.min(255, (y - lo) * 255 / span));
+            px[i] = (al << 24) | lut[y];
+        }
+        b.setPixels(px, 0, w, 0, 0, w, hh);
+    }
+
+    static int lum(int p) { return (54 * ((p >> 16) & 255) + 183 * ((p >> 8) & 255) + 19 * (p & 255)) >> 8; }
 
     String badgeText(App a) {
         int n = a.work ? 0 : Link.badge(a.cn.getPackageName());

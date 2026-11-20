@@ -295,7 +295,7 @@ public class SetWallpaper extends Activity {
         cdr.addView(chipItem("Style", null, "lnStyle", 0, new int[]{0, 1, 2, 3}, new String[]{"Text", "Icon + text", "Grid", "Icons only"}));
         cdr.addView(chipItem("Grid columns", "Grid and Icons only.", "lnCols", 4, new int[]{4, 5, 6}, new String[]{"4", "5", "6"}));
         cdr.addView(switchItem("TN-HUD icon frames", "The icon pack's octagon frame, applied here, so TN-HUD-Icons isn't needed for the drawer.", "lnIconFrame", true, null));
-        cdr.addView(chipItem("Icon colour", "Neon maps each icon onto Tokyo Night cyan; the frame keeps its colour.", "lnIconTint", 0, new int[]{0, 1, 2}, new String[]{"Original", "Mono", "Neon"}));
+        cdr.addView(chipItem("Icon colour", "Neon maps each icon onto a Tokyo Night blue-to-cyan ramp; the frame keeps its colour.", "lnIconTint", 0, new int[]{0, 1, 2}, new String[]{"Original", "Mono", "Neon"}));
         divider(cdr);
         cdr.addView(switchItem("Frequent apps", "Top 5 at the start of the drawer, counted on this phone.", "lnFrequent", true, null));
         cdr.addView(switchItem("Search finds hidden apps", null, "lnSearchHidden", true, null));
@@ -1094,15 +1094,12 @@ public class SetWallpaper extends Activity {
         tx.setBackground(ripple(new ColorDrawable(Color.TRANSPARENT), 8, onSurface));
         tx.setClickable(true);
         tx.setOnClickListener(new View.OnClickListener() { public void onClick(View x) {
-            new android.app.AlertDialog.Builder(SetWallpaper.this, dark ? android.R.style.Theme_Material_Dialog_Alert : android.R.style.Theme_Material_Light_Dialog_Alert)
-                    .setTitle("Glyph " + g)
-                    .setSingleChoiceItems(Gestures.ACTION_NAMES, Gestures.glyphAction(sp, g), new android.content.DialogInterface.OnClickListener() {
-                        public void onClick(android.content.DialogInterface d, int w) {
-                            d.dismiss();
-                            if (w == Gestures.OPEN_APP) pickGestureApp("gm_" + g, paint);
-                            else { sp.edit().putInt("gm_" + g, w).apply(); paint.run(); }
-                        }
-                    }).setNegativeButton("Cancel", null).show();
+            glass().list("Glyph " + g, Gestures.ACTION_NAMES, Gestures.glyphAction(sp, g), new Glass.Pick() {
+                public void on(int w) {
+                    if (w == Gestures.OPEN_APP) pickGestureApp("gm_" + g, paint);
+                    else { sp.edit().putInt("gm_" + g, w).apply(); paint.run(); }
+                }
+            }).show();
         } });
         r.addView(button("Teach", 2, new View.OnClickListener() { public void onClick(View x) { teachGlyph(g, paint); } }));
         return r;
@@ -1182,15 +1179,12 @@ public class SetWallpaper extends Activity {
         r.setBackground(ripple(new ColorDrawable(Color.TRANSPARENT), 8, onSurface));
         r.setClickable(true);
         r.setOnClickListener(new View.OnClickListener() { public void onClick(View x) {
-            new android.app.AlertDialog.Builder(SetWallpaper.this, dark ? android.R.style.Theme_Material_Dialog_Alert : android.R.style.Theme_Material_Light_Dialog_Alert)
-                    .setTitle(Gestures.NAMES[gi])
-                    .setSingleChoiceItems(Gestures.ACTION_NAMES, Gestures.get(sp, g), new android.content.DialogInterface.OnClickListener() {
-                        public void onClick(android.content.DialogInterface d, int w) {
-                            d.dismiss();
-                            if (w == Gestures.OPEN_APP) pickGestureApp("lg_" + g, paint);
-                            else { sp.edit().putInt("lg_" + g, w).apply(); paint.run(); }
-                        }
-                    }).setNegativeButton("Cancel", null).show();
+            glass().list(Gestures.NAMES[gi], Gestures.ACTION_NAMES, Gestures.get(sp, g), new Glass.Pick() {
+                public void on(int w) {
+                    if (w == Gestures.OPEN_APP) pickGestureApp("lg_" + g, paint);
+                    else { sp.edit().putInt("lg_" + g, w).apply(); paint.run(); }
+                }
+            }).show();
         } });
         return r;
     }
@@ -1205,14 +1199,12 @@ public class SetWallpaper extends Activity {
         java.util.Collections.sort(items, new java.util.Comparator<String[]>() { public int compare(String[] a, String[] b) { return a[1].compareToIgnoreCase(b[1]); } });
         String[] names = new String[items.size()];
         for (int i = 0; i < names.length; i++) names[i] = items.get(i)[1];
-        new android.app.AlertDialog.Builder(this, dark ? android.R.style.Theme_Material_Dialog_Alert : android.R.style.Theme_Material_Light_Dialog_Alert)
-                .setTitle("Open which app?")
-                .setItems(names, new android.content.DialogInterface.OnClickListener() {
-                    public void onClick(android.content.DialogInterface d, int w) {
-                        sp.edit().putInt(key, Gestures.OPEN_APP).putString(key + "_app", items.get(w)[0]).apply();
-                        done.run();
-                    }
-                }).setNegativeButton("Cancel", null).show();
+        glass().list("Open which app?", names, -1, new Glass.Pick() {
+            public void on(int w) {
+                sp.edit().putInt(key, Gestures.OPEN_APP).putString(key + "_app", items.get(w)[0]).apply();
+                done.run();
+            }
+        }).show();
     }
 
     /** single-select chip row stored as an int pref */
@@ -1400,12 +1392,10 @@ public class SetWallpaper extends Activity {
     }
 
     void confirmRevoke(final String[] perms) {
-        android.app.AlertDialog.Builder b = new android.app.AlertDialog.Builder(this, dark ? android.R.style.Theme_Material_Dialog_Alert : android.R.style.Theme_Material_Light_Dialog_Alert);
-        b.setTitle("Revoke access?");
-        b.setMessage("TN-HUD will close and restart to apply this; the wallpaper reloads by itself.");
-        b.setNegativeButton("Cancel", null);
-        b.setPositiveButton("Revoke", new android.content.DialogInterface.OnClickListener() {
-            public void onClick(android.content.DialogInterface d, int w) {
+        glass().message("Revoke access?", "TN-HUD will close and restart to apply this; the wallpaper reloads by itself.",
+                new String[]{"Cancel", "Revoke"}, new Glass.Pick() {
+            public void on(int w) {
+                if (w != 1) return;
                 try {
                     java.util.List<String> l = new java.util.ArrayList<String>();
                     for (String p : perms) if (has(p)) l.add(p);
@@ -1416,9 +1406,10 @@ public class SetWallpaper extends Activity {
                     } }, 400);
                 } catch (Throwable e) { appSettings(); }
             }
-        });
-        b.show();
+        }).show();
     }
+
+    Glass glass() { return new Glass(this, dark, null); }
 
     void appSettings() {
         try {
