@@ -828,7 +828,7 @@ public class HudWallpaper extends WallpaperService {
             cmdTap = sp.getBoolean("cmdTap", false);
             d.nightDim = sp.getBoolean("nightDim", true);
             d.nightDimAmt = Math.max(30, Math.min(70, sp.getInt("nightDimPct", 40))) / 100f;
-            d.noDock = sp.getBoolean("noDock", false);
+            d.noDock = launcherMode || sp.getBoolean("noDock", false);
             loadShortcuts(sp);
             d.splitPages = sp.getBoolean("splitPages", true);
             for (int col = 0; col < 4; col++)
@@ -1417,6 +1417,22 @@ public class HudWallpaper extends WallpaperService {
         @Override public Bundle onCommand(String action, int x, int y, int z, Bundle extras, boolean resultRequested) {
             // Earliest unlock signal where the platform sends it; USER_PRESENT and polling are the fallbacks.
             if (!isPreview() && "android.wallpaper.keyguardgoingaway".equals(action) && mode == HudRenderer.LOCKED) startUnlock();
+            // TN-HUD launcher: it owns the touches and forwards them; while it is in front, raw touches are ignored
+            if ("tnhud.launcher".equals(action)) {
+                launcherMode = z == 1; launcherAt = System.currentTimeMillis();
+                if (launcherMode) { drawerOpen = false; d.noDock = true; } else d.noDock = getSharedPreferences("hud", Context.MODE_PRIVATE).getBoolean("noDock", false);
+                if (visible && mode == HudRenderer.STATIC) frame();
+            }
+            if ("tnhud.drawer".equals(action)) { launcherDrawer = z == 1; }
+            if ("tnhud.tap".equals(action) && mode == HudRenderer.STATIC && !launcherDrawer) { launcherAt = System.currentTimeMillis(); onTap(x, y); }
+            if ("tnhud.page".equals(action) && mode == HudRenderer.STATIC && d.virtualPages) {
+                int[] vt = new int[3]; int nt = d.visibleTabs(vt);
+                if (nt > 1) {
+                    vPage = ((vPage + z) % nt + nt) % nt; avOverride = true;
+                    getSharedPreferences("hud", Context.MODE_PRIVATE).edit().putInt("vPage", vPage).apply();
+                    pageAt = SystemClock.uptimeMillis(); updatePaging(); haptic(false); frame();
+                }
+            }
             if ("android.wallpaper.tap".equals(action)) {
                 if (!cmdTap) { cmdTap = true; getSharedPreferences("hud", Context.MODE_PRIVATE).edit().putBoolean("cmdTap", true).apply(); }
                 if (mode == HudRenderer.STATIC) onTap(x, y);
@@ -1426,7 +1442,7 @@ public class HudWallpaper extends WallpaperService {
 
         long pageAt = -100000, tapAt = -100000, lastTapUp, pendAt, pendArg;
         int lastTapX, lastTapY, pendAct = -1;
-        boolean cmdTap;
+        boolean cmdTap, launcherMode, launcherDrawer; long launcherAt;
         final boolean[][] DEF_MODS = {
             {true, true, true, true, true, false, false, false, false, false}, {true, true, true, false, false, false, true, false, false, true},
             {true, true, false, true, true, false, false, false, false, false}, {true, true, false, false, false, true, false, false, true, false}};
@@ -1461,7 +1477,7 @@ public class HudWallpaper extends WallpaperService {
         boolean drawerByZoom;
 
         @Override public void onTouchEvent(android.view.MotionEvent e) {
-            if (mode != HudRenderer.STATIC) return;
+            if (mode != HudRenderer.STATIC || launcherMode) return;
             int a = e.getActionMasked();
             if (a == android.view.MotionEvent.ACTION_DOWN) { tdx = e.getX(); tdy = e.getY(); tdt = e.getEventTime(); vy = 0; lastMoveT = tdt; lastMoveY = tdy; }
             else if (a == android.view.MotionEvent.ACTION_MOVE) {
@@ -1502,7 +1518,7 @@ public class HudWallpaper extends WallpaperService {
 
         /** taps on empty home-screen areas (launcher sends WallpaperManager.COMMAND_TAP) */
         void onTap(int x, int y) {
-            if (drawerOpen || zoom >= 0.02f || !getSharedPreferences("hud", Context.MODE_PRIVATE).getBoolean("hudTaps", true)) return;
+            if ((drawerOpen && !launcherMode) || zoom >= 0.02f || !getSharedPreferences("hud", Context.MODE_PRIVATE).getBoolean("hudTaps", true)) return;
             long nowT = SystemClock.uptimeMillis();
             // the same physical tap can arrive twice (raw touch + launcher command): same place, within 150 ms
             if (nowT - lastTapUp < 150 && Math.abs(x - lastTapX) < 40 && Math.abs(y - lastTapY) < 40) return;

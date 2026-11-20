@@ -3,4 +3,5 @@
   <string name="app_name">TN-HUD Live</string>
   <string name="desc">Tokyo Night HUD. Live system dashboard on home, breach sequence on unlock.</string>
     <string name="dream_name">TN-HUD · GNSS</string>
+    <string name="launcher_name">TN-HUD Launcher</string>
 </resources>

@@ -213,6 +213,38 @@ public class SetWallpaper extends Activity {
             sp.edit().remove("order_" + editView).apply(); fillHomeList(homeList); } }));
         ca.addView(ra);
 
+        // ---- launcher
+        LinearLayout cln = card("Launcher", "Use the HUD as your home app: it owns the touches (no icons in the way), swipe left / right changes tabs, swipe up opens a text-only app drawer with search, long-press for this menu. The lock screen stays the live wallpaper, so keep TN-HUD set as wallpaper too.");
+        final TextView lnState = text("", 14, onSurfaceVar, true);
+        cln.addView(lnState);
+        onResumeHooks.add(new Runnable() { public void run() {
+            Intent hi = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
+            android.content.pm.ResolveInfo ri = getPackageManager().resolveActivity(hi, 0);
+            boolean ours = ri != null && ri.activityInfo != null && getPackageName().equals(ri.activityInfo.packageName);
+            lnState.setText(ours ? "\u2713 TN-HUD is your home app" : "Not the home app");
+            lnState.setTextColor(ours ? primary : onSurfaceVar);
+        } });
+        LinearLayout rln = row();
+        rln.addView(button("Choose home app", 1, new View.OnClickListener() { public void onClick(View v) {
+            try { startActivity(new Intent(android.provider.Settings.ACTION_HOME_SETTINGS)); }
+            catch (Exception e) { try { startActivity(new Intent(android.provider.Settings.ACTION_SETTINGS)); } catch (Exception ignored) { } }
+        } }));
+        cln.addView(rln);
+        divider(cln);
+        cln.addView(text("Gestures", 16, onSurface, false));
+        cln.addView(body("Notifications and quick settings open Android's own panels; not every phone lets apps do that, in which case the swipe from the status bar still works."));
+        for (int gi = 0; gi < Gestures.KEYS.length; gi++) cln.addView(gestureItem(gi));
+        divider(cln);
+        cln.addView(switchItem("Frequent apps", "Top 5 at the start of the drawer, counted on this phone.", "lnFrequent", true, null));
+        cln.addView(switchItem("Search finds hidden apps", null, "lnSearchHidden", true, null));
+        LinearLayout rln2 = row();
+        rln2.addView(button("Unhide all apps", 2, new View.OnClickListener() { public void onClick(View v) {
+            SharedPreferences.Editor e = sp.edit();
+            for (String k : sp.getAll().keySet()) if (k.startsWith("lh_")) e.remove(k);
+            e.apply();
+        } }));
+        cln.addView(rln2);
+
         // ---- taps
         LinearLayout ck = card("Taps", "The HUD sits under your icons, so taps can land on it by accident. Taps are ignored after you swipe up to the app drawer, until you swipe down, go back or go home.");
         ck.addView(switchItem("HUD taps", "Off: the wallpaper ignores touches completely (view tabs too).", "hudTaps", true, null));
@@ -978,6 +1010,63 @@ public class SetWallpaper extends Activity {
         dlg.setContentView(box);
         if (dlg.getWindow() != null) dlg.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
         dlg.show();
+    }
+
+    /** launcher gesture row: name, current action; tap to pick an action (and an app for "Open an app…") */
+    View gestureItem(final int gi) {
+        final String g = Gestures.KEYS[gi];
+        LinearLayout r = new LinearLayout(this);
+        r.setOrientation(LinearLayout.VERTICAL);
+        r.setMinimumHeight(px(56));
+        r.setPadding(0, px(8), 0, px(8));
+        r.addView(text(Gestures.NAMES[gi], 16, onSurface, false));
+        final TextView v = text("", 14, primary, false);
+        r.addView(v);
+        if (Gestures.HINTS[gi] != null) r.addView(text(Gestures.HINTS[gi], 12, onSurfaceVar, false));
+        final Runnable paint = new Runnable() { public void run() {
+            int a = Gestures.get(sp, g);
+            String s = Gestures.ACTION_NAMES[a];
+            if (a == Gestures.OPEN_APP) {
+                String k = Gestures.app(sp, g);
+                s = "Open " + (k == null ? "(no app chosen)" : appLabel(k.substring(0, k.indexOf('/') > 0 ? k.indexOf('/') : k.length()), k));
+            }
+            v.setText(s);
+        } };
+        paint.run();
+        r.setBackground(ripple(new ColorDrawable(Color.TRANSPARENT), 8, onSurface));
+        r.setClickable(true);
+        r.setOnClickListener(new View.OnClickListener() { public void onClick(View x) {
+            new android.app.AlertDialog.Builder(SetWallpaper.this, dark ? android.R.style.Theme_Material_Dialog_Alert : android.R.style.Theme_Material_Light_Dialog_Alert)
+                    .setTitle(Gestures.NAMES[gi])
+                    .setSingleChoiceItems(Gestures.ACTION_NAMES, Gestures.get(sp, g), new android.content.DialogInterface.OnClickListener() {
+                        public void onClick(android.content.DialogInterface d, int w) {
+                            d.dismiss();
+                            if (w == Gestures.OPEN_APP) pickGestureApp(g, paint);
+                            else { sp.edit().putInt("lg_" + g, w).apply(); paint.run(); }
+                        }
+                    }).setNegativeButton("Cancel", null).show();
+        } });
+        return r;
+    }
+
+    void pickGestureApp(final String g, final Runnable done) {
+        android.content.pm.LauncherApps la = (android.content.pm.LauncherApps) getSystemService(Context.LAUNCHER_APPS_SERVICE);
+        android.os.UserManager um = (android.os.UserManager) getSystemService(Context.USER_SERVICE);
+        android.os.UserHandle me = android.os.Process.myUserHandle();
+        final ArrayList<String[]> items = new ArrayList<String[]>();
+        for (android.content.pm.LauncherActivityInfo i : la.getActivityList(null, me))
+            items.add(new String[]{i.getComponentName().flattenToShortString() + "#" + um.getSerialNumberForUser(me), String.valueOf(i.getLabel())});
+        java.util.Collections.sort(items, new java.util.Comparator<String[]>() { public int compare(String[] a, String[] b) { return a[1].compareToIgnoreCase(b[1]); } });
+        String[] names = new String[items.size()];
+        for (int i = 0; i < names.length; i++) names[i] = items.get(i)[1];
+        new android.app.AlertDialog.Builder(this, dark ? android.R.style.Theme_Material_Dialog_Alert : android.R.style.Theme_Material_Light_Dialog_Alert)
+                .setTitle("Open which app?")
+                .setItems(names, new android.content.DialogInterface.OnClickListener() {
+                    public void onClick(android.content.DialogInterface d, int w) {
+                        sp.edit().putInt("lg_" + g, Gestures.OPEN_APP).putString("lg_" + g + "_app", items.get(w)[0]).apply();
+                        done.run();
+                    }
+                }).setNegativeButton("Cancel", null).show();
     }
 
     /** single-select chip row stored as an int pref */

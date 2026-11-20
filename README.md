@@ -27,6 +27,13 @@ Built for a Galaxy S24 Ultra (1440×3120) but resolution independent. Android 8.
 - Darkness window, meteor showers, moon phase / perigee, time scales (UTC, TAI, GPS, Unix, JD, LST, sundial / EoT)
 - Every tile reorderable and switchable
 
+**Launcher** (optional home app, Settings › Apps › Choose default apps › Home app → *TN-HUD Launcher*)
+- The HUD becomes the home screen and owns the touches: no icons over it, no misfires from the app drawer
+- Swipe left / right changes tabs, long-press for the menu
+- Remappable gestures: swipe up, swipe down (left / right side), two-finger swipe down, double tap, home button while home → app drawer, notifications, quick settings, torch, camera, next tab, HUD settings or any app
+- Swipe up: text-only drawer with the search field focused and the keyboard up; Enter opens the top match (or searches the web), A–Z rail, frequent apps (launches decayed over ~2 weeks), rename / hide / app info / uninstall, hidden apps behind a "show hidden" row, work-profile apps tagged
+- Planned: app shortcuts on long-press, drawn glyph gestures (W → WhatsApp), hosted widgets
+
 **Screen saver** (Settings › Display › Screen saver → "TN-HUD · GNSS", charging only)
 - Sky plot of every GNSS satellite in view by constellation, C/N0 bars, dual-band flags, fix and TTFF
 - Voyager 1 / 2 distance and light-time
@@ -70,6 +77,20 @@ export ANDROID_HOME=~/Library/Android/sdk     # macOS default; ~/Android/Sdk on 
 
 The pipeline is `javac → d8 (or dx) → aapt → zipalign → apksigner`. The code compiles against the API 23 jar on purpose; newer APIs are called by reflection or via the compile-only stubs in `app/stubs` (never packaged).
 
+### GitHub Actions
+
+`.github/workflows/build.yml` runs `test.sh` and builds both APKs on every push and pull request (download them from the run's *Artifacts*). Pushing a tag such as `v32` also publishes a release with the APKs attached, which Obtainium can follow.
+
+To sign CI builds with your key, add three repository secrets (*Settings › Secrets and variables › Actions*):
+
+```sh
+base64 -i keystore/tn-hud.jks | pbcopy     # paste as KEYSTORE_BASE64
+# KS_PASS   = keystore password
+# KEY_ALIAS = tnhud
+```
+
+Without the secrets the workflow signs with a throwaway key (artifact name ends in `-throwaway`): fine for testing, but it won't install over your own build, and no release is published.
+
 ### Signing
 
 `build.sh` signs with `keystore/tn-hud.jks` (alias `tnhud`) unless you set `KEYSTORE`, `KEY_ALIAS` and `KS_PASS`. The `keystore/` folder is git-ignored: **never commit a keystore**. Android only installs an update over an existing install if it's signed with the same key, so keep a backup of yours. To make a new one:
@@ -98,6 +119,7 @@ app/
     HudWallpaper.java    wallpaper engine: lock/unlock/home state machine, sensors, data jobs, taps
     HudRenderer.java     everything drawn (pure android.graphics)
     HudDream.java        charging screen saver (GNSS + Voyager)
+    HudLauncher.java     optional home app: gesture shell over the wallpaper + text-only app drawer
     SetWallpaper.java    Material 3 settings app
     Astro.java           Sun / Moon / planets, twilight, lunar events, meteors, Voyager model
     Sgp4.java, Sat.java  SGP4 propagator, look angles, visible-pass and Starlink-train detection

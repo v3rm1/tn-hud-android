@@ -14,7 +14,7 @@ import java.util.Map;
 final class Backup {
     static final String[] SKIP_EXACT = {"city", "cityQuery", "lat", "lon", "liveloc", "obsLat", "obsLon", "swUpd", "kp", "bz", "swV", "xr", "xrMax",
             "xrMaxAt", "scR", "scS", "scG", "kpSeries", "kpFc", "kpFcAt", "cloudT", "cloudV", "cmdTap", "vPage", "uiTab", "lastUnlock", "unlCount", "unlDay"};
-    static final String[] SKIP_PREFIX = {"dg_", "asked_", "alLast", "steps"};
+    static final String[] SKIP_PREFIX = {"dg_", "asked_", "alLast", "steps", "lc_", "lf_", "lt_"};
 
     static boolean skip(String k) {
         for (String s : SKIP_EXACT) if (s.equals(k)) return true;
